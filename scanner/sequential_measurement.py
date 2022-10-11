@@ -92,6 +92,7 @@ class ScannerMeasurement():
         
         """
         self.fs = 51200
+        self.micro_steps = 1600
         
     def set_arduino_parameters(self, x_pwm = 2, x_dig = 24,
                                 y_pwm = 3, y_dig = 26,
@@ -130,8 +131,13 @@ class ScannerMeasurement():
         # ARDUINO BOARD COMMUNICATION
         self.board = telemetrix.Telemetrix()
         
-    def set_motors(self,):
+    def set_motors(self, pausing_time_array = [5, 8, 7]):
         """ Set the motors
+        
+        Parameters
+        ----------
+        pausing_time_array : numpy 1dArray
+            1x3 array with the x, y, z pausing times to stablize movement
         """
         # Motors:
         self.motor_x = self.board.set_pin_mode_stepper(interface=1, 
@@ -144,6 +150,12 @@ class ScannerMeasurement():
         self.motor_z = self.board.set_pin_mode_stepper(interface=1, 
             pin1 = self.arduino_params['step_pins'][2][0], 
             pin2 = self.arduino_params['step_pins'][2][1], enable=False)
+        
+        # Motor dictionaries
+        self.motor_dict = {'x' : self.motor_x, 'y' : self.motor_y,
+                           'z' : self.motor_z}
+        self.motor_pause_dict = {'x' : pausing_time_array[0], 
+             'y' : pausing_time_array[1], 'z' : pausing_time_array[2]}
 
     def set_dht_sensor(self,):
         """ Set sensor to measure humifdity and temperature
@@ -247,3 +259,129 @@ class ScannerMeasurement():
         ax.set_ylim((-vsam_size/2, vsam_size/2))
         ax.set_zlim((0, vsam_size))
         ax.view_init(elev=51, azim=-31)
+
+    def stepper_run_base(self, motor, steps_to_send):
+        """ Base method to move a motor
+        
+        Parameters
+        ----------
+        motor : int
+            The motor to be moved
+        steps_to_send : int
+            The number of steps to move the motor
+        """ 
+        self.board.stepper_set_current_position(0, 0)
+        self.board.stepper_set_max_speed(motor, 400)
+        self.board.stepper_set_acceleration(motor, 50)
+        self.board.stepper_move(motor, steps_to_send)
+        self.board.stepper_run(motor, completion_callback = self.completion_callback)
+        self.pause(pausing_time = 0.2)
+        self.board.stepper_is_running(motor, callback = self.running_callback)
+        self.pause(pausing_time = 0.2)
+        while self.exit_flag == 0:
+            self.pause(pausing_time = 0.2)
+         
+    def stepper_run(self, motor, dist = 0.01):
+        """ Move the motor
+        
+        If the distance is larger than 16 [cm], then the movement is executed
+        in two steps to avoid bad behaviour
+        
+        Parameters
+        ----------
+        motor : int
+            The motor to be moved
+        dist : float
+            Distance in [m] to move the motor
+        """
+        pre_steps_to_send = dist * self.micro_steps / 0.008
+        if abs(dist) <= 0.16:
+            steps_to_send = int(pre_steps_to_send)
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)
+        else:
+            steps_to_send = int(pre_steps_to_send/2)
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)            
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)
+    
+    def running_callback(self, data):
+        """Callback function to inform if the motor is moving or not
+        """
+        if data[1]:
+            print('The motor is running.')
+        else:
+            print('The motor IS NOT running.')            
+    
+    def completion_callback(self, data):
+        """Callback function to inform that the movement is complete
+        
+        Informs that the movement of a certain motor is complete and changes
+        the value of the exit_flag variable in the class
+        """
+        # global exit_flag
+        date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(data[2]))
+        print(f'Motor {data[1]} absolute motion completed at: {date}.')
+        self.exit_flag += 1
+        
+    def pause(self, pausing_time = 0.2):
+        """ Pause for a few seconds
+        
+        Used to stabilize the measurement system.
+        
+        Parameters
+        ----------
+        time : float
+            time to pause
+        """
+        time.sleep(pausing_time)
+    
+    def move_motor(self, motor_to_move = 'x', dist = 0.01):
+        """ Move motor x
+        
+        Parameters
+        ----------
+        motor : float
+            can be either 'x', 'y' or 'z' - specifying the motor to be moved
+        dist : float
+            distance along x-axis in [m]
+        micro_steps : int
+            number of micro steps
+        """
+        self.stepper_run(self.motor_dict[motor_to_move], dist = dist)
+        self.pause(pausing_time = self.motor_pause_dict[motor_to_move])
+        
+    def sequential_movement(self,):
+        """ Move all motors sequentially through the array positions
+        """
+        for i in range(self.receivers.coord.shape[0]):
+            print(f'\n Meas number {i+1} of {self.receivers.coord.shape[0]}')
+            # all_u_t.append(u_t)
+            if self.stand_array[i, 0] != 0:
+                self.move_motor(motor_to_move = 'x',
+                                dist = self.stand_array[i, 0])
+                # stepperRun(board, motorX, dist=standArray[i,0], microSteps=1600)
+                # time.sleep(5)
+            # else:
+            #     pass
+            if self.stand_array[i, 1] != 0:
+                self.move_motor(motor_to_move = 'y',
+                                dist = self.stand_array[i, 1])
+                # stepperRun(board, motorY, dist=standArray[i,1], microSteps=1600)
+                # time.sleep(8)
+            # else:
+            #     pass
+            if self.stand_array[i, 2] != 0:
+                self.move_motor(motor_to_move = 'z',
+                                dist = self.stand_array[i, 2])
+                # stepperRun(board, motorZ, dist=standArray[i,2], microSteps=1600)
+                # time.sleep(7)
+            # else:
+            #     pass
+
+        print('\n Measurement ended !!! \n')
+        
+
+
+    
