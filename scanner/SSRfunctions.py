@@ -231,6 +231,7 @@ def get_NI(NIargs, usage='Rec'):
         output_task.write(xt)
         output_task.triggers.start_trigger.cfg_dig_edge_start_trig(
             NIargs['triggerConfig']['terminalTrigger'])
+        print("I am in Rec")
     else:
         pass
     """ Done """
@@ -302,7 +303,26 @@ def NI_play_rec(inTask, outTask, NIargs, plot=False, returnObj=True):
         return ptRec
     else:
         return p_recObj
-    
+
+def NI_play_rec2(inTask, outTask, NIargs, plot=False, returnObj=True):
+    print('Acqusition is started')
+    outTask.start()
+    inTask.start()
+    master_data = inTask.read(number_of_samples_per_channel=NIargs['timingConfig']['samplesInOut'],
+                              timeout=round(len(NIargs['timingConfig']['signalExc'])/NIargs['timingConfig']['sampleRate'], 2))
+    print('Acqusition ended')
+    inTask.stop()
+    outTask.stop()
+    # ptRec = np.asarray(master_data)
+    # p_recObj = SignalObj(signalArray=ptRec, domain='time',
+    #                      freqMin=1, freqMax=25600,
+    #                      samplingRate=NIargs['timingConfig']['sampleRate'])
+    # if plot is True:
+    #     p_recObj.plot_time(xLabel='Time[s]', yLabel='Amplitude [Pa]')
+    # if returnObj is False:
+    #     return ptRec
+    # else:
+    #     return p_recObj    
 
 def NIpt_PlayRec(NIdev, NIargs, rep, returnObj=True):
     p_rep = []

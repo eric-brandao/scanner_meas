@@ -10,20 +10,22 @@ Module to control the scanner during sequential impulse response measurements
 # general imports
 import sys
 import os
+from pathlib import Path
 import time
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 import scipy.io as io
-from scipy.signal import windows
+from scipy.signal import windows, resample, chirp
 
 # Pytta imports
 import pytta
-from pytta.generate import sweep
-from pytta.classes import SignalObj, FRFMeasure
-from pytta import ImpulsiveResponse, save, merge
+# from pytta.generate import sweep
+# from pytta.classes import SignalObj, FRFMeasure
+# from pytta import ImpulsiveResponse, save, merge
 
 # Arduino imports
 from telemetrix import telemetrix
@@ -84,15 +86,276 @@ class ScannerMeasurement():
         the x, y, and z distances between the points
     """
     
-    def __init__(self,):
+    def __init__(self, main_folder = 'D:', name = 'samplename',                 
+                 fs = 51200, fft_degree = 18, 
+             start_stop_margin = [0, 4.5], mic_sens = None):
         """
 
         Parameters
         ----------
-        
+        main_folder : str
+            main folder for the measurements
+        name: str
+            name of the measurement
+        fs : int
+            sampling rate
+        fft_degree : int
+            degree of measured signals - N of samples is 2**fft_degree
+        start_stop_margin : list
+            list with start margin and stop margin
+        mic_sens : float
+            microphone sensitivity [mV/Pa]            
         """
-        self.fs = 51200
+        self.main_folder = Path(main_folder)
+        self.name = name
+        self.check_main_folder()
+        
+        self.fs = fs
+        self.fft_degree = fft_degree
+        self.start_margin = start_stop_margin[0]
+        self.stop_margin = start_stop_margin[1]
         self.micro_steps = 1600
+        self.mic_sens = mic_sens
+        self.save() # save initialization
+        
+    def check_main_folder(self,):
+        folder_to_test = self.main_folder / self.name
+        if folder_to_test.exists():
+            print('Measurement path already exists. Proceed with care as you may loose data. Use this object to read only.')
+        else:
+            folder_to_test.mkdir(parents = False, exist_ok = False)
+            measured_signals_folder = folder_to_test / 'measured_signals'
+            measured_signals_folder.mkdir(parents = False, exist_ok = False)
+
+    def ni_set_config_dicts(self, input_dict = dict(terminal = 'cDAQ1Mod1/ai0', 
+             mic_sens = 51.4, current_exc_sensor = 0.0022,
+             max_min_val = [-5, 5]),
+             output_dict = dict(terminal = 'cDAQ1Mod3/ao0', 
+             max_min_val =  [-10,10])):
+        """ sets NI configuration dictionaries
+        """
+        self.input_dict = input_dict
+        self.output_dict = output_dict     
+
+    def pytta_list_devices(self,):
+        """ Liste pytta devices for choice
+        """
+        print(pytta.list_devices())
+        
+    def pytta_set_device(self, device):
+        """Choose your input and output devices for a full pytta measurement
+        
+        Parameters
+        ----------
+        device : int
+            integer specifying your measurement device (from pytta.list_devices())
+        """
+        self.device = device
+        
+    
+    def set_meas_sweep(self, method = 'logarithmic', freq_min = 1,
+                       freq_max = None, n_zeros_pad = 200):
+        """Set the input signal object
+        
+        The input signal is called "xt". This is to ease further
+        implementation. For example, if you want to set a random signal,
+        you can also call it "xt", and pass it to the same method that 
+        computes the IR
+        
+        Parameters
+        ----------
+        method : str
+            method of sweep
+        freq_min : float
+            minimum frequency of the sweep
+        freq_max : float or None
+            maximum frequency of the sweep. Default is None, which sets
+            it to fs/2
+        """
+        self.freq_min = freq_min
+        if freq_max is None:
+            self.freq_max = int(self.fs/2)
+        else:
+            self.freq_max = freq_max
+        
+        self.method = method
+        self.n_zeros_pad = n_zeros_pad
+        
+        # set pytta sweep
+        xt = pytta.generate.sweep(freqMin = self.freq_min,
+          freqMax = self.freq_max, samplingRate = self.fs,
+          fftDegree = self.fft_degree, startMargin = self.start_margin,
+          stopMargin = self.stop_margin,
+          method = self.method, windowing='hann')
+        new_xt = np.zeros(len(xt.timeSignal[:,0]) + n_zeros_pad)
+        new_xt[:len(xt.timeSignal[:,0])] = xt.timeSignal[:,0]
+        
+        # time = np.linspace(0, (2**self.fft_degree-1)/self.fs, 2**self.fft_degree)
+        # xt = chirp(t = time, f0 = self.freq_min, t1 = time[-1], f1 = self.freq_max,
+        #            method = 'logarithmic')
+        # new_xt = np.zeros(len(xt) + n_zeros_pad)
+        # new_xt[:len(xt)] = xt
+        
+        
+        self.xt = pytta.classes.SignalObj(
+            signalArray = new_xt, 
+            domain='time', samplingRate = self.fs)
+        
+        self.Nsamples = len(self.xt.timeSignal[:,0])
+    
+    def ni_set_play_rec_tasks(self, ):
+        
+        self.rn = np.random.randint(0, high = 1000)        
+        # if hasattr(self, 'input_task'):
+        #     self.input_task.close()
+        #     del(self.input_task)
+        
+        self.get_input_task(input_type = 'mic')
+        
+        # if hasattr(self, 'output_task'):
+        #     self.output_task.close()
+        #     del(self.output_task)
+            
+        self.get_output_task()
+        
+    
+    def ni_get_input_task(self, input_type = 'mic'):
+        """ Get input task for NI
+        
+        Parameters
+        ----------
+        input_type : str
+            string with type of recording. Can be either 'mic' for microphone
+            or 'voltage' to configure by pass measurement. Default or any str sets
+            to 'mic'
+        """
+        #input_unit = SoundPressureUnits.PA
+        # Max of sound card for dBFS
+        self.max_val_dbFS = self.input_dict['max_min_val'][1]
+        # Instantiate NI object
+        self.input_task = nidaqmx.Task(new_task_name = 'intask' + str(self.rn))
+        # Configure input signal
+        if input_type == 'mic':
+            self.input_task.ai_channels.add_ai_microphone_chan(
+                self.input_dict['terminal'], 
+                units = SoundPressureUnits.PA, 
+                mic_sensitivity = self.input_dict['mic_sens'],
+                current_excit_val = self.input_dict['current_exc_sensor'])
+        elif input_type == 'voltage':
+            self.input_task.ai_channels.add_ai_voltage_chan(
+                self.input_dict['terminal'],
+                min_val = self.input_dict['max_min_val'][0], 
+                max_val = self.input_dict['max_min_val'][1],
+                units = VoltageUnits.VOLTS)
+        else:
+            self.input_task.ai_channels.add_ai_microphone_chan(
+                self.input_dict['terminal'], 
+                units = SoundPressureUnits.PA, 
+                mic_sensitivity = self.input_dict['mic_sens'],
+                current_excit_val = self.input_dict['current_exc_sensor'])
+            
+        self.input_task.timing.cfg_samp_clk_timing(self.fs,
+            sample_mode = AcquisitionType.FINITE, 
+            samps_per_chan = self.Nsamples)
+            
+        # return input_task
+    
+    def ni_get_output_task(self, ):
+        """ Get output task for NI
+        """
+        self.output_task = nidaqmx.Task(new_task_name = 'outtask' + str(self.rn))
+        
+        self.output_task.ao_channels.add_ao_voltage_chan(
+            self.output_dict['terminal'],
+            min_val = self.output_dict['max_min_val'][0], 
+            max_val = self.output_dict['max_min_val'][1],
+            units = VoltageUnits.VOLTS)
+        
+        self.output_task.timing.cfg_samp_clk_timing(self.fs,
+            sample_mode = AcquisitionType.FINITE,
+            samps_per_chan = self.Nsamples)
+        
+        self.output_task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION
+        
+        self.output_task.write(self.xt.timeSignal[:,0])
+        # print(a)
+        self.output_task.triggers.start_trigger.cfg_dig_edge_start_trig('/cDAQ1/ai/StartTrigger')
+        
+        # return output_task
+    
+    def ni_play_rec(self,):
+        """Measure response signal using NI
+        
+        Returns
+        ----------
+        yt_rec_obj : pytta object
+            output signal
+        """
+        self.set_play_rec_tasks()
+        # Initialize for measurement
+        print('Acqusition started')
+        self.output_task.start()
+        self.input_task.start()
+        # Measure
+        master_data = self.input_task.read(
+            number_of_samples_per_channel = self.Nsamples,
+            timeout = 2*round(self.Nsamples/self.fs, 2))
+        # Stop measuring
+        self.input_task.stop()
+        self.input_task.close()
+        self.output_task.stop()
+        self.output_task.close()
+        # Get list as array
+        yt_rec = np.asarray(master_data)
+        # Print message
+        dBFS = round(20*np.log10(np.amax(np.abs(yt_rec))/self.max_val_dbFS), 2)
+        print('Acqusition ended: {} dBFS'.format(dBFS))
+        # Pass to pytta
+        yt_rec_obj = pytta.classes.SignalObj(
+            signalArray = yt_rec, 
+            domain='time', freqMin = self.freq_min, 
+            freqMax = self.freq_max, samplingRate = self.fs)
+        
+        return yt_rec_obj
+    
+    def pytta_play_rec_setup(self,):
+        """ Configure measurement of response signal using pytta and sound card
+        """
+        self.pytta_meas = pytta.generate.measurement('playrec',
+            excitation = self.xt,
+            samplingRate = self.fs,
+            freqMin = self.freq_min,
+            freqMax = self.freq_max,
+            device = self.device,
+            inChannels=[1],
+            outChannels=[1])
+
+    def pytta_play_rec(self,):
+        """ Measure response signal using pytta and sound card
+        
+        Returns
+        ----------
+        yt_rec_obj : pytta object
+            output signal
+        """
+        print('Acqusition started')
+        yt_rec_obj = self.pytta_meas.run()
+        print('Acqusition ended')
+        return yt_rec_obj
+    
+    def ir(self, yt, regularization = False):
+        """ Computes the impulse response of a given output
+        
+        Parameters
+        ----------
+        yt : pytta object
+            output signal
+        """
+        ht = pytta.ImpulsiveResponse(excitation = self.xt, 
+             recording = yt, samplingRate = self.fs, regularization = regularization)
+        
+        return ht
+
         
     def set_arduino_parameters(self, x_pwm = 2, x_dig = 24,
                                 y_pwm = 3, y_dig = 26,
@@ -118,7 +381,7 @@ class ScannerMeasurement():
         self.arduino_params = {'step_pins': [[x_pwm, x_dig],  # x axis
                                 [y_pwm, y_dig],  # y axis
                                 [z_pwm, z_dig]], # z axis
-                  'dht_pin': 40 }
+                  'dht_pin': dht}
         
         self.exit_flag = 0
         self.u_t = []
@@ -338,7 +601,7 @@ class ScannerMeasurement():
         time.sleep(pausing_time)
     
     def move_motor(self, motor_to_move = 'x', dist = 0.01):
-        """ Move motor x
+        """ Move motor x, y or z
         
         Parameters
         ----------
@@ -352,35 +615,122 @@ class ScannerMeasurement():
         self.stepper_run(self.motor_dict[motor_to_move], dist = dist)
         self.pause(pausing_time = self.motor_pause_dict[motor_to_move])
         
+    def move_motor_xyz(self, distance_vector):
+        """ Move three motors sequentially
+        
+        Parameters
+        ----------
+        distance_vector : numpy 1dArray
+            vector containing the x, y, z distances to displace each motor        
+        """
+        keys = list(self.motor_dict.keys())
+        for axis in range(3):
+            if distance_vector[axis] != 0:
+                self.move_motor(motor_to_move = keys[axis],
+                                dist = distance_vector[axis])        
+        
     def sequential_movement(self,):
         """ Move all motors sequentially through the array positions
         """
         for i in range(self.receivers.coord.shape[0]):
-            print(f'\n Meas number {i+1} of {self.receivers.coord.shape[0]}')
-            # all_u_t.append(u_t)
-            if self.stand_array[i, 0] != 0:
-                self.move_motor(motor_to_move = 'x',
-                                dist = self.stand_array[i, 0])
-                # stepperRun(board, motorX, dist=standArray[i,0], microSteps=1600)
-                # time.sleep(5)
-            # else:
-            #     pass
-            if self.stand_array[i, 1] != 0:
-                self.move_motor(motor_to_move = 'y',
-                                dist = self.stand_array[i, 1])
-                # stepperRun(board, motorY, dist=standArray[i,1], microSteps=1600)
-                # time.sleep(8)
-            # else:
-            #     pass
-            if self.stand_array[i, 2] != 0:
-                self.move_motor(motor_to_move = 'z',
-                                dist = self.stand_array[i, 2])
-                # stepperRun(board, motorZ, dist=standArray[i,2], microSteps=1600)
-                # time.sleep(7)
-            # else:
-            #     pass
-
+            print(f'\n Position number {i+1} of {self.receivers.coord.shape[0]}')
+            
+            self.move_motor_xyz(self.stand_array[i,:])
+        
+        print('\n Moving ended !!! \n')
+        
+    def sequential_measurement(self, meas_with_ni = True, 
+                               repetitions = 1):
+        """ Move all motors sequentially through the array positions
+        
+        Parameters
+        ----------
+        meas_with_ni : bool
+            whether to measure wit NI or not. Default is True
+        repetitions : int
+            number of repeated measurements
+        """
+        self.repetitions = repetitions
+        yt_list = []
+        for jrec in range(self.receivers.coord.shape[0]):
+            print(f'\n Meas number {jrec+1} of {self.receivers.coord.shape[0]}')
+            # Move the motor
+            self.move_motor_xyz(self.stand_array[jrec,:])
+            # Take temperature and pressure
+            ####
+            # Take measurement and save it #ToDo
+            if meas_with_ni:
+                print("Solving sweep problems")
+            else: # measure with pytta
+                y_rep_list = []
+                for jmeas in range(self.repetitions):
+                    yt_obj = self.pytta_play_rec()
+                    y_rep_list.append(yt_obj)
+                    # ptta saving
+                    filename = 'rec' + str(int(jrec)) +\
+                        '_m' + str(int(jmeas)) + '.hdf5'
+                    complete_path = self.main_folder / self.name / 'measured_signals'
+                    pytta.save(str(complete_path / filename), yt_obj)
+                # append all to main list
+                yt_list.append(y_rep_list)
+        # update control object
+        self.save()        
         print('\n Measurement ended !!! \n')
+        return yt_list
+    
+    def delete_unpickleable_vars(self,):
+        temp_dict =  self.__dict__   
+        if hasattr(self, 'xt'):
+            del temp_dict['xt']
+        if hasattr(self, 'pytta_meas'):
+            del temp_dict['pytta_meas']
+        if hasattr(self, 'board'):
+            del temp_dict['board']
+        
+        return temp_dict
+    
+    def save(self,):
+        """Saves the measurement control object as pickle
+
+        """
+        pickle_name = self.name + '.pkl'
+        path_filename = self.main_folder / self.name / pickle_name
+        save_dict = self.delete_unpickleable_vars()
+        with path_filename.open(mode = 'wb') as f:
+            pickle.dump(save_dict, f, 2)
+        f.close()
+        
+    def load(self,):
+        """Loads the measurement control object as pickle
+
+        """
+        pickle_name = self.name + '.pkl'
+        path_filename = self.main_folder / self.name / pickle_name
+        with path_filename.open(mode = 'rb') as f:
+            tmp_dict = pickle.load(f)
+        f.close()
+        self.set_meas_sweep(method = self.method, 
+            freq_min = self.freq_min, freq_max = self.freq_max,
+            n_zeros_pad = self.n_zeros_pad)
+        self.pytta_play_rec_setup()
+        self.__dict__.update(tmp_dict)
+        
+    def load_meas_files(self,):
+        """Load all measurement files
+        """
+        yt_list = []
+        for jrec in range(self.receivers.coord.shape[0]):
+            y_rep_list = []
+            for jmeas in range(self.repetitions):
+                filename = 'rec' + str(int(jrec)) +\
+                        '_m' + str(int(jmeas)) + '.hdf5'
+                complete_path = self.main_folder / self.name / 'measured_signals'
+                med_dict = pytta.load(str(complete_path / filename))
+                # print(med_dict)
+                y_rep_list.append(med_dict['repetitions'])
+            yt_list.append(y_rep_list)
+            
+        return yt_list
         
 
 

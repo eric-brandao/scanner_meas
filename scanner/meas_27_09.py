@@ -179,15 +179,14 @@ rep=2
 
 "If you want to change the signal excitation --------------------------------------------------------------- "
 "        -->> If you do, also you need to change 'Sweep' to 'sweepIR', also, 'NIargs' to 'NIargsIR' -------- "
-Sweep = sweep(freqMin=1,
+Sweep = sweep(freqMin=100,
           freqMax=int(fs/2),
           samplingRate=fs,
-          fftDegree=18,
+          fftDegree=19,
           startMargin=0.0,
-          stopMargin=4.5,
+          stopMargin=0.5,
           method='logarithmic',
           windowing='hann')
-
 
 
 NIargs = {'modIn':        {'terminal': 'cDAQ1Mod1/ai0', 
@@ -208,16 +207,16 @@ input_task, output_task = SSR.get_NI(NIargs, usage='PlayRec')
 NIdev = []
 NIdev.append(input_task);   NIdev.append(output_task)
 
-# Play/Rec:
+# # Play/Rec:
 ptIR = SSR.NIpt_PlayRec(NIdev, NIargs, rep)
 
-# Processing all Impulsive Responses:
-ht=[]
-for i in range(rep):  
-    Ht = ImpulsiveResponse(excitation=Sweep, recording=ptIR[i], samplingRate=fs, regularization=False)
-    Ht.plot_time(xLim=[0.00, 0.016])
-    # Ht.plot_freq()
-    ht.append(Ht)
+# # Processing all Impulsive Responses:
+# ht=[]
+# for i in range(rep):  
+#     Ht = ImpulsiveResponse(excitation=Sweep, recording=ptIR[i], samplingRate=fs, regularization=False)
+#     Ht.plot_time(xLim=[0.00, 0.016])
+#     # Ht.plot_freq()
+#     ht.append(Ht)
     
 #%% ARRAY - SETUP OF POINTS
 receivers = Receiver()
