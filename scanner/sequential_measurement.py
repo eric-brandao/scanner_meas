@@ -87,8 +87,12 @@ class ScannerMeasurement():
     """
     
     def __init__(self, main_folder = 'D:', name = 'samplename',                 
-                 fs = 51200, fft_degree = 18, 
-             start_stop_margin = [0, 4.5], mic_sens = None):
+            fs = 51200, fft_degree = 18, 
+            start_stop_margin = [0, 4.5], mic_sens = None,
+            x_pwm_pin = 2, x_digital_pin = 24,
+            y_pwm_pin = 3, y_digital_pin = 26,
+            z_pwm_pin = 4, z_digital_pin = 28,
+            dht_pin = 40, pausing_time_array = [5, 8, 7]):
         """
 
         Parameters
@@ -104,18 +108,55 @@ class ScannerMeasurement():
         start_stop_margin : list
             list with start margin and stop margin
         mic_sens : float
-            microphone sensitivity [mV/Pa]            
+            microphone sensitivity [mV/Pa]
+        x_pwm_pin : int
+            pin number of PWM on x-axis
+        x_digital_pin : int
+            pin number of digital signal on x-axis
+        y_pwm_pin : int
+            pin number of PWM on y-axis
+        y_digital_pin : int
+            pin number of digital signal on y-axis
+        z_pwm_pin : int
+            pin number of PWM on z-axis
+        z_digital_pin : int
+            pin number of digital signal on z-axis
+        dht_pin : int
+            pin number of dht reading
+        pausing_time_array : numpy 1dArray
+            1x3 array with the x, y, z pausing times to stablize movement
         """
+        # folder checking
         self.main_folder = Path(main_folder)
         self.name = name
         self.check_main_folder()
         
+        # audio signals checking
         self.fs = fs
         self.fft_degree = fft_degree
         self.start_margin = start_stop_margin[0]
         self.stop_margin = start_stop_margin[1]
         self.micro_steps = 1600
         self.mic_sens = mic_sens
+        
+        # arduino main parameters
+        self.arduino_params = {'step_pins': [[x_pwm_pin, x_digital_pin],  # x axis
+                                [y_pwm_pin, y_digital_pin],  # y axis
+                                [z_pwm_pin, z_digital_pin]], # z axis
+                               'dht_pin': dht_pin}
+        
+        self.pausing_time_array = pausing_time_array
+        
+        self.exit_flag = 0
+        self.u_t = []
+        # humidity in air - current and list filled at each meas
+        self.humidity_list = []
+        self.humidity_current = None
+        # temperature - current and list filled at each meas
+        self.temperature_current = None
+        self.temperature_list = []
+        
+        # saving the control object        
         self.save() # save initialization
         
     def check_main_folder(self,):
@@ -357,32 +398,10 @@ class ScannerMeasurement():
         return ht
 
         
-    def set_arduino_parameters(self, x_pwm = 2, x_dig = 24,
-                                y_pwm = 3, y_dig = 26,
-                                z_pwm = 4, z_dig = 28,
-                                dht = 40):
+    def set_arduino_parameters(self,):
         """ set arduino parameters
         
-        Parameters
-        ----------
-        x_pwm : int
-            PWM pin number for motor x
-        x_dig : int
-            digital pin number for motor x
-        y_pwm : int
-            PWM pin number for motor y
-        y_dig : int
-            digital pin number for motor y
-        z_pwm : int
-            PWM pin number for motor z
-        z_dig : int
-            digital pin number for motor z
-        """
-        self.arduino_params = {'step_pins': [[x_pwm, x_dig],  # x axis
-                                [y_pwm, y_dig],  # y axis
-                                [z_pwm, z_dig]], # z axis
-                  'dht_pin': dht}
-        
+        """        
         self.exit_flag = 0
         self.u_t = []
         # humidity in air - current and list filled at each meas
@@ -394,14 +413,12 @@ class ScannerMeasurement():
         # ARDUINO BOARD COMMUNICATION
         self.board = telemetrix.Telemetrix()
         
-    def set_motors(self, pausing_time_array = [5, 8, 7]):
-        """ Set the motors
+    def set_motors(self, ):
+        """ Set the ARDUINO board and motors
         
-        Parameters
-        ----------
-        pausing_time_array : numpy 1dArray
-            1x3 array with the x, y, z pausing times to stablize movement
         """
+        print('Pre-setting the motors and arduino controller.')
+        self.board = telemetrix.Telemetrix()
         # Motors:
         self.motor_x = self.board.set_pin_mode_stepper(interface=1, 
             pin1 = self.arduino_params['step_pins'][0][0], 
@@ -414,11 +431,14 @@ class ScannerMeasurement():
             pin1 = self.arduino_params['step_pins'][2][0], 
             pin2 = self.arduino_params['step_pins'][2][1], enable=False)
         
+        # Temperature and humidity
+        self.set_dht_sensor()
         # Motor dictionaries
         self.motor_dict = {'x' : self.motor_x, 'y' : self.motor_y,
                            'z' : self.motor_z}
-        self.motor_pause_dict = {'x' : pausing_time_array[0], 
-             'y' : pausing_time_array[1], 'z' : pausing_time_array[2]}
+        self.motor_pause_dict = {'x' : self.pausing_time_array[0], 
+             'y' : self.pausing_time_array[1], 
+             'z' : self.pausing_time_array[2]}
 
     def set_dht_sensor(self,):
         """ Set sensor to measure humifdity and temperature
@@ -632,12 +652,13 @@ class ScannerMeasurement():
     def sequential_movement(self,):
         """ Move all motors sequentially through the array positions
         """
-        for i in range(self.receivers.coord.shape[0]):
-            print(f'\n Position number {i+1} of {self.receivers.coord.shape[0]}')
+        for jrec in range(self.receivers.coord.shape[0]):
+            print(f'\n Position number {jrec+1} of {self.receivers.coord.shape[0]}')
             
-            self.move_motor_xyz(self.stand_array[i,:])
+            self.move_motor_xyz(self.stand_array[jrec,:])
         
-        print('\n Moving ended !!! \n')
+        print('\n Moving ended. I will shut down the board instance! \n')
+        self.board.shutdown()
         
     def sequential_measurement(self, meas_with_ni = True, 
                                repetitions = 1):
@@ -659,26 +680,41 @@ class ScannerMeasurement():
             # Take temperature and pressure
             ####
             # Take measurement and save it #ToDo
-            if meas_with_ni:
-                print("Solving sweep problems")
-            else: # measure with pytta
-                y_rep_list = []
-                for jmeas in range(self.repetitions):
+            
+            y_rep_list = []
+            for jmeas in range(self.repetitions):
+                if meas_with_ni:
+                    print("Solving sweep problems")
+                else: # measure with pytta
                     yt_obj = self.pytta_play_rec()
-                    y_rep_list.append(yt_obj)
-                    # ptta saving
-                    filename = 'rec' + str(int(jrec)) +\
-                        '_m' + str(int(jmeas)) + '.hdf5'
-                    complete_path = self.main_folder / self.name / 'measured_signals'
-                    pytta.save(str(complete_path / filename), yt_obj)
-                # append all to main list
-                yt_list.append(y_rep_list)
+                
+                y_rep_list.append(yt_obj)
+                # ptta saving
+                filename = 'rec' + str(int(jrec)) +\
+                    '_m' + str(int(jmeas)) + '.hdf5'
+                complete_path = self.main_folder / self.name / 'measured_signals'
+                pytta.save(str(complete_path / filename), yt_obj)
+            # append all to main list
+            yt_list.append(y_rep_list)
+            # Take temperature and humidity
+            self.temperature_list.append(self.temperature_current)
+            self.humidity_list.append(self.humidity_current)
         # update control object
+        self.board.shutdown()
         self.save()        
-        print('\n Measurement ended !!! \n')
+        print('\n Measurement ended. I will shut down the board instance! \n')
         return yt_list
     
     def delete_unpickleable_vars(self,):
+        """ Delete pytta, NI, and telemetrix objects
+        
+        These instances are unpickleable
+        
+        Returns
+        ----------
+        temp_dict : dict
+            Pickleable dictionary        
+        """
         temp_dict =  self.__dict__   
         if hasattr(self, 'xt'):
             del temp_dict['xt']
