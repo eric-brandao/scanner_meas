@@ -251,13 +251,13 @@ class ScannerMeasurement():
         #     self.input_task.close()
         #     del(self.input_task)
         
-        self.get_input_task(input_type = 'mic')
+        self.ni_get_input_task(input_type = 'mic')
         
         # if hasattr(self, 'output_task'):
         #     self.output_task.close()
         #     del(self.output_task)
             
-        self.get_output_task()
+        self.ni_get_output_task()
         
     
     def ni_get_input_task(self, input_type = 'mic'):
@@ -332,7 +332,7 @@ class ScannerMeasurement():
         yt_rec_obj : pytta object
             output signal
         """
-        self.set_play_rec_tasks()
+        self.ni_set_play_rec_tasks()
         # Initialize for measurement
         print('Acqusition started')
         self.output_task.start()
@@ -661,7 +661,8 @@ class ScannerMeasurement():
         self.board.shutdown()
         
     def sequential_measurement(self, meas_with_ni = True, 
-                               repetitions = 1):
+                               repetitions = 1,
+                               plot_frf = False):
         """ Move all motors sequentially through the array positions
         
         Parameters
@@ -670,6 +671,8 @@ class ScannerMeasurement():
             whether to measure wit NI or not. Default is True
         repetitions : int
             number of repeated measurements
+        plot_frf : bool
+            whether to plot the FRF or not
         """
         self.repetitions = repetitions
         yt_list = []
@@ -688,12 +691,17 @@ class ScannerMeasurement():
                 else: # measure with pytta
                     yt_obj = self.pytta_play_rec()
                 
+                # if plot_frf:
+                #     self.plot_spk(yt_obj)
+                
                 y_rep_list.append(yt_obj)
                 # ptta saving
                 filename = 'rec' + str(int(jrec)) +\
                     '_m' + str(int(jmeas)) + '.hdf5'
                 complete_path = self.main_folder / self.name / 'measured_signals'
                 pytta.save(str(complete_path / filename), yt_obj)
+                # plot FRF
+                
             # append all to main list
             yt_list.append(y_rep_list)
             # Take temperature and humidity
@@ -704,6 +712,19 @@ class ScannerMeasurement():
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
         return yt_list
+    
+    def plot_spk(self, yt_obj):
+        """ Plot magnitude of FRF
+        """
+        # compute FRF
+        ht = self.ir(yt = yt_obj, regularization = True)
+        freq = ht.irSignal.freqVector
+        mag_h = 20*np.log10(np.abs(ht.irSignal.freqSignal))
+        fig = plt.figure(num = 1, figsize = (7,5))
+        plt.semilogx(freq, mag_h)
+        
+        
+        
     
     def delete_unpickleable_vars(self,):
         """ Delete pytta, NI, and telemetrix objects

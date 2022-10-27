@@ -20,7 +20,7 @@ name = 'testing_meas'
 main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash
 # arduino_dict = dict()
 meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
-    fs = 44100, fft_degree = 17, 
+    fs = 44100, fft_degree = 19, 
     start_stop_margin = [0.1, 0.5], mic_sens = 51.4,
     x_pwm_pin = 2, x_digital_pin = 24,
     y_pwm_pin = 3, y_digital_pin = 26,
@@ -42,7 +42,7 @@ meas_obj.pytta_set_device(device = 14)
 #%%
 
 meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 1,
-                       freq_max = None, n_zeros_pad = 0)
+                       freq_max = None, n_zeros_pad = 200)
 
 #%%
 meas_obj.pytta_play_rec_setup()
@@ -50,7 +50,7 @@ meas_obj.pytta_play_rec_setup()
 #%%
 yt_obj = meas_obj.pytta_play_rec() 
 #%%
-# yt_obj = meas_obj.ni_play_rec()
+yt_obj = meas_obj.ni_play_rec()
 
 #%%
 ht_obj = meas_obj.ir(yt = yt_obj, regularization = True)
@@ -87,7 +87,8 @@ meas_obj.sequential_movement()
 
 #%%
 yt_list = meas_obj.sequential_measurement(meas_with_ni = False,
-                                          repetitions = 2)
+                                          repetitions = 2,
+                                          plot_frf = True)
 #%%
 yt_list = meas_obj.load_meas_files()
 
