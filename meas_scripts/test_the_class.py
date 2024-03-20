@@ -63,7 +63,7 @@ ht_obj = meas_obj.ir(yt = yt_obj, regularization = True)
 meas_obj.set_motors()
 
 #%%
-meas_obj.move_motor(motor_to_move = 'z', dist = -0.005) 
+meas_obj.move_motor(motor_to_move = 'z', dist = -0.01) 
 #%%
 #meas_obj.set_dht_sensor()
 

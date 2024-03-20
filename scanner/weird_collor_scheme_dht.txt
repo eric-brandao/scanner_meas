@@ -1,0 +1,3 @@
+GND - verde - transparente - marrom - azul
+DATA - amarelo - preto - laranja - cinza
+VCC - vermelho - transpvermelho - vermelho - roxo

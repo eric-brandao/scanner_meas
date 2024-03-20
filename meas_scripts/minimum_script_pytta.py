@@ -22,13 +22,13 @@ meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 1,
                        freq_max = None, n_zeros_pad = 0)
 meas_obj.pytta_play_rec_setup()
 #%%
-meas_obj.set_motors()
-#%%
 receiver_obj = Receiver()
 # receiver_obj.double_planar_array(x_len=0.1,n_x=2,y_len=0.1,n_y=2, zr=0.015, dz=0.03)
 receiver_obj.double_rec(z_dist = 0.02)
 pt0 = np.array([0.0, 0.0, 0.02]); "--> Coordinates where the michophone is"
 meas_obj.set_receiver_array(receiver_obj, pt0 = pt0)
+#%%
+meas_obj.set_motors()
 #%%
 yt_list = meas_obj.sequential_measurement(meas_with_ni = False,
       repetitions = 2)

@@ -369,7 +369,8 @@ class ScannerMeasurement():
             freqMax = self.freq_max,
             device = self.device,
             inChannels=[1],
-            outChannels=[1])
+            outChannels=[1],
+            outputAmplification = -8)
 
     def pytta_play_rec(self,):
         """ Measure response signal using pytta and sound card
@@ -432,7 +433,7 @@ class ScannerMeasurement():
             pin2 = self.arduino_params['step_pins'][2][1], enable=False)
         
         # Temperature and humidity
-        self.set_dht_sensor()
+        # self.set_dht_sensor()
         # Motor dictionaries
         self.motor_dict = {'x' : self.motor_x, 'y' : self.motor_y,
                            'z' : self.motor_z}
@@ -712,6 +713,28 @@ class ScannerMeasurement():
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
         return yt_list
+    
+    
+    def take_measurements(self, repetitions = 1, meas_name = 'name'):
+        """ Move all motors sequentially through the array positions
+        
+        Parameters
+        ----------
+        repetitions : int
+            number of repeated measurements
+        meas_name : name
+            measurement name
+        """
+        self.repetitions = repetitions
+        for jmeas in range(self.repetitions):
+            print('Taking measurement #{}'.format(jmeas))
+            yt_obj = self.pytta_play_rec()
+            # ptta saving
+            filename = meas_name +\
+                '_m' + str(int(jmeas)) + '.hdf5'
+            complete_path = self.main_folder / self.name / 'measured_signals'
+            pytta.save(str(complete_path / filename), yt_obj)
+            # plot FRF
     
     def plot_spk(self, yt_obj):
         """ Plot magnitude of FRF

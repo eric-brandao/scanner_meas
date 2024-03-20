@@ -555,7 +555,88 @@ def c_sound(t=20):
     return c_sound
 
 
-def IRwindow(tw1=0.8, tw2=3.0, timelength_w3=0.0094, t_start=0.00025, plot=True,
+def IRwindow(t, pt, hss, d_sample, d10, tw1, tw2, timelength_w3, t_start, T, plot=True,
+             savefig=False, path= '', name = ''):
+    """
+    Creation and application of the temporal window on an Impulse Response
+    Parameters
+    ----------
+    hss : float [m]
+        Distance between source and sample.
+    d_sample : float [m]
+        Sample's thickness.
+    d10 : float [m]
+        Distance between microphone and sample
+    tw1 : float 0 < tw1 < 1 [-]
+        The product of this parameter with the direct arrival time results
+        on the time when the first temporal window is concatenated with the second one.
+    tw2 : float [s]
+        The product of this parameter with the reflected arrival time  results
+        on the time when the first temporal window is concatenated with the second one.
+    timelength_w3 : float [s]
+        Time length of the last temporal window.
+
+    Returns
+    -------
+    None.
+
+    """
+    hs = hss + d_sample
+    ds_10 = hss - d10
+    "Distance between microphone and the source"
+    td_10 = np.divide(ds_10, c_sound(t=T))
+    "Theoretical arrival time of the direct incidence"
+    tr_10 = np.divide(ds_10 + 2*d10, c_sound(t=T))
+    "Theoretical arrival time of the reflected incidence"
+
+    "Times when the window type changes:"
+    tw1_10 = tw1*td_10
+    tw2_10 = tw2*tr_10
+    "Creating each window"
+    w1_10 = h_hann(Fs=51200, dataType='time', length=tw1_10-t_start, form='up')
+    w2_10 = RectWin(Fs=51200, dataType='time', length=tw2_10 - tw1_10)
+    w3_10 = h_hann(Fs=51200, dataType='time', length=timelength_w3, form='down')
+    Winds = []
+    Winds.append(w1_10)
+    Winds.append(w2_10)
+    Winds.append(w3_10)
+    ww_10, t_10 = hybrid_window(Windows=Winds, dataType='time', fs=51200, start=t_start)
+
+    w_10 = np.zeros((pt.shape[0]), dtype='float64')
+    for i in range(len(ww_10)):
+        w_10[i] = ww_10[i]
+    "Applying the windows on the IR:"
+    IR_windowed = np.zeros((pt.shape[0],), dtype='float64')
+    for j in range(w_10.shape[0]):
+        IR_windowed[j] = np.multiply(w_10[j], pt[j])
+
+    if plot is True:
+        ticksX_4p = [0.0, 0.003, 0.006, 0.009, 0.0120, 0.015, 0.018]
+        ticksX_4p_label = ['0,0', '3,0', '6,0', '9,0', '12,0', '15,0', '18,0']
+        ticksY_4p = [-0.75, -0.5, -0.25, 0, 0.25, 0.50, 0.75, 1.0];
+        ticksY_4p_label = ['-0,75','-0,5', '-0.25', '0,0', '0,25', '0,50', '0,75', '1,00'];
+        plt.figure()
+        plt.grid(color='gray', linestyle='-.', linewidth=0.4)
+        plt.title('Resp. Impulsiva + janela temporal')
+        plt.plot(t, pt/max(pt), linewidth=1.5, label='RI')
+        plt.plot(t, w_10, linewidth=2.8, label='Janela')
+        plt.xlim((0.0, 0.035));   plt.ylim((-0.9, 1.1))
+        plt.xticks(ticksX_4p, ticksX_4p_label)
+        plt.yticks(ticksY_4p, ticksY_4p_label)
+        plt.legend(loc='best', fontsize='medium')
+        plt.xlabel('Tempo [ms]')
+        plt.ylabel('Amplitude normalizada')
+        plt.tight_layout()
+        plt.show()
+        if savefig is True:
+            nameFig = path + name + '.png'
+            plt.savefig(nameFig, dpi=300)
+    else:
+        pass
+
+    return IR_windowed, w_10
+
+def IRwindow2(tw1=0.8, tw2=3.0, timelength_w3=0.0094, t_start=0.00025, plot=True,
              savefig=False, path= '', name = '', t=float(), pt=float(), s_coord=np.array(()), 
              pt_coord=np.array(()), T=float()):
     

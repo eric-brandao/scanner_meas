@@ -1,0 +1,12 @@
+Arduino installation
+1 - conectar a placa ao pc, Gerenciador de Dispositivos
+2 - Right click CH340
+3 - propriedades: taxa de atualizacao = 115200 Hz
+                  controle do fluxo =  hardware
+4 - Baixe o arduino IDE (https://www.arduino.cc/en/software)
+5 - Abra o Arduino IDE
+5 - Selecione a placa Arduino MEGA 2560
+6 - carregar o código-fonte do Telemetrix à placa
+    - Ferramentas -> Manage Libraries/gerenciar bibliotecas
+    - Pesquisar por Telemetrix4Arduino e instalar
+    - carregar o exemplo e fazer o upload.
