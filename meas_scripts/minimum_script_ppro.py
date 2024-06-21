@@ -60,6 +60,18 @@ ht_list = ppro_obj.compute_all_ir_load(regularization = True, only_linear_part =
 ppro_obj.load_irs()
 
 #%%
+Hw_sm = ppro_obj.moving_avg(idir = 0, nfft = 8192)
+
+#%%
+plt.figure()
+# plt.semilogx(ppro_obj.freq_Hw, 20*np.log10(np.abs(ppro_obj.Hww_mtx[0,:])))
+# plt.semilogx(ppro_obj.freq_Hw, 20*np.log10(np.abs(Hw_sm)))
+
+plt.semilogx(ppro_obj.freq_Hw, np.imag(ppro_obj.Hww_mtx[0,:]))
+plt.semilogx(ppro_obj.freq_Hw, np.imag(Hw_sm))
+plt.xlim((100, 10000))
+
+#%%
 fig, ax = plt.subplots(1, figsize = (8,6), sharex = False)
 ppro_obj.plot_ir(ax, idir = 0, normalize = True, xlims = (0, 30e-3))
 

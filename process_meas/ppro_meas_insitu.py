@@ -243,6 +243,37 @@ class InsituMeasurementPostPro():
             self.nfft_half = int((nfft+1)/2)           
         self.freq_Hw = np.linspace(0, (nfft-1)*self.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.htw_mtx, axis = 1)[:,:self.nfft_half]
+        
+    def compute_spk(self,):
+        """ Computes the spectrum on the time signal matrix
+        """
+        # FFT
+        nfft = self.ht_mtx.shape[1]
+        if (nfft % 2) == 0:
+            self.nfft_half = int(nfft/2)
+        else:
+            self.nfft_half = int((nfft+1)/2)           
+        self.freq_Hw = np.linspace(0, (nfft-1)*self.fs/nfft, nfft)[:self.nfft_half]
+        self.Hww_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
+        
+    def moving_avg(self, idir = 0, nfft = 8192):
+        """ Computes moving average on spectrum
+        """
+        G=1-0.4/(1.5e4)*self.freq_Hw
+        Hw_sm = np.zeros(len(self.Hww_mtx[idir,:]), dtype = complex)
+        for a in np.arange(0, len(self.freq_Hw)):
+            b = np.round([a - G[a] * a * (nfft-1) / self.fs, 
+                          a + G[a] * a * (nfft-1) / self.fs])
+            
+            try:
+                mag = np.mean(np.abs(self.Hww_mtx[idir, int(b[0]):int(b[1])]))
+                phase = np.mean(np.angle(self.Hww_mtx[idir, int(b[0]):int(b[1])]))
+                Hw_sm[a] = mag*np.exp(1j*phase)
+                # Hw_sm[a] = np.mean(self.Hww_mtx[idir, int(b[0]):int(b[1])])
+            except:
+                Hw_sm[a] = self.Hww_mtx[a];
+        return Hw_sm
+
     
     def plot_ir(self, ax, idir = 0, normalize = True, xlims = (0, 50e-3),
                 windowed = False):

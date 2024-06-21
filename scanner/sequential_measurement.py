@@ -7,6 +7,7 @@ Module to control the scanner during sequential impulse response measurements
 @author: ericb
 """
 
+
 # general imports
 import sys
 import os
@@ -20,6 +21,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 import scipy.io as io
 from scipy.signal import windows, resample, chirp
+from datetime import datetime
 
 # Pytta imports
 import pytta
@@ -32,6 +34,7 @@ from telemetrix import telemetrix
 
 # Receiver class
 from receivers import Receiver
+from sources import Source
 
 # NI imports
 import nidaqmx
@@ -92,7 +95,13 @@ class ScannerMeasurement():
             x_pwm_pin = 2, x_digital_pin = 24,
             y_pwm_pin = 3, y_digital_pin = 26,
             z_pwm_pin = 4, z_digital_pin = 28,
-            dht_pin = 40, pausing_time_array = [5, 8, 7]):
+            dht_pin = 40, pausing_time_array = [5, 8, 7],
+            material = None, material_type = 'melamine_L60cm_d4cm',
+            temperature = 20, humidity = 0.5,
+            microphone_type = 'Behringer ECM 8000',
+            audio_interface = 'M-audio Fast Track Pro',
+            amplifier = 'BK 2718',
+            source_type = 'spherical speaker', source = None):
         """
 
         Parameters
@@ -125,6 +134,24 @@ class ScannerMeasurement():
             pin number of dht reading
         pausing_time_array : numpy 1dArray
             1x3 array with the x, y, z pausing times to stablize movement
+        material : object
+            Object containing pre-measured material properties (e.g. flow resistivity)
+        material_type : str 
+            String describing the test material - include relevant info (type, size, thickness)
+        temperature : float
+            Measured temperature in ºC (later we can measure it with a sensor at each coordinate) 
+        humidity : float
+            Measured humidity [-] lin scale (later we can measure it with a sensor at each coordinate) 
+        microphone_type : str
+            String describing microphone model
+        audio_interface : str
+            String describing the audio interface (DAQ) model
+        amplifier : str
+            String describing the power amplifier model
+        source_type : str
+            String describing the source type (e.g. spherical speaker, dipole, ...)
+        source : obj
+            source object containing its coordinates
         """
         # folder checking
         self.main_folder = Path(main_folder)
@@ -155,11 +182,39 @@ class ScannerMeasurement():
         # temperature - current and list filled at each meas
         self.temperature_current = None
         self.temperature_list = []
+        self.temperature = temperature
+        self.humidity = humidity
+        
+        # material
+        self.material = material
+        self.material_type = material_type
+        
+        # Instrumentation
+        self.microphone_type = microphone_type
+        self.audio_interface = audio_interface
+        self.amplifier = amplifier
+        self.source_type = source_type
+        self.source = source
         
         # saving the control object        
-        self.save() # save initialization
+        # self.save() # save initialization
+    
+    def set_measurement_date(self,):
+        """ Use datetime to set the measurement date
+        """
+        self.date_of_measurement = datetime.today()
+        self.save()
+        
+    def get_measurement_date(self,):
+        """ Use datetime to get the dd/mm/yyyy of measurement
+        """
+        print("Date (dd/mm/yyyy) of measurement is {}/{}/{}".format(self.date_of_measurement.day,
+                                                       self.date_of_measurement.month,
+                                                       self.date_of_measurement.year))
         
     def check_main_folder(self,):
+        """ Check if the main folder already exists or create new folder
+        """
         folder_to_test = self.main_folder / self.name
         if folder_to_test.exists():
             print('Measurement path already exists. Proceed with care as you may loose data. Use this object to read only.')
@@ -213,6 +268,7 @@ class ScannerMeasurement():
             maximum frequency of the sweep. Default is None, which sets
             it to fs/2
         """
+        # sweep metadata
         self.freq_min = freq_min
         if freq_max is None:
             self.freq_max = int(self.fs/2)
@@ -222,6 +278,8 @@ class ScannerMeasurement():
         self.method = method
         self.n_zeros_pad = n_zeros_pad
         
+        # save up to here - signal object is not pickable.
+        self.save()
         # set pytta sweep
         xt = pytta.generate.sweep(freqMin = self.freq_min,
           freqMax = self.freq_max, samplingRate = self.fs,
@@ -237,11 +295,10 @@ class ScannerMeasurement():
         # new_xt = np.zeros(len(xt) + n_zeros_pad)
         # new_xt[:len(xt)] = xt
         
-        
         self.xt = pytta.classes.SignalObj(
             signalArray = new_xt, 
             domain='time', samplingRate = self.fs)
-        
+
         self.Nsamples = len(self.xt.timeSignal[:,0])
     
     def ni_set_play_rec_tasks(self, ):
@@ -359,7 +416,8 @@ class ScannerMeasurement():
         
         return yt_rec_obj
     
-    def pytta_play_rec_setup(self,):
+    def pytta_play_rec_setup(self, in_channel = 1, out_channel = 1, 
+                             output_amplification = -3):
         """ Configure measurement of response signal using pytta and sound card
         """
         self.pytta_meas = pytta.generate.measurement('playrec',
@@ -368,9 +426,9 @@ class ScannerMeasurement():
             freqMin = self.freq_min,
             freqMax = self.freq_max,
             device = self.device,
-            inChannels=[1],
-            outChannels=[1],
-            outputAmplification = -8)
+            inChannels=[in_channel],
+            outChannels=[out_channel],
+            outputAmplification = output_amplification)
 
     def pytta_play_rec(self,):
         """ Measure response signal using pytta and sound card
@@ -440,6 +498,10 @@ class ScannerMeasurement():
         self.motor_pause_dict = {'x' : self.pausing_time_array[0], 
              'y' : self.pausing_time_array[1], 
              'z' : self.pausing_time_array[2]}
+        
+        print("We are moving y motor to make sure everything is working.")
+        self.move_motor(self, motor_to_move = 'y', dist = -0.001)
+        self.move_motor(self, motor_to_move = 'y', dist = 0.001)
 
     def set_dht_sensor(self,):
         """ Set sensor to measure humifdity and temperature
@@ -500,49 +562,99 @@ class ScannerMeasurement():
         self.receivers.coord = order1
         # creating the matrix with all distances between all points
         self.stand_array = utils.matrix_stepper(self.pt0, self.receivers.coord)
+        self.save()
+        self.load()
         
-    def plot_scene(self, title = '', sample_size = 0.65, vsam_size = 2):
+    def plot_scene(self, title = '', L_x = 0.6, L_y = 0.6, sample_thickness = 0.1,
+                   baffle_size = 1.2, elev = 30, azim = 45):
         """ Plot of the scene using matplotlib - not redered
     
         Parameters
         ----------
-        vsam_size : float
-            Scene size. Just to make the plot look nicer. You can choose any value.
-            An advice is to choose a value bigger than the sample's largest dimension.
+        sample_size : float
+            Sample size.
         """
         fig = plt.figure()
-        fig.canvas.set_window_title("Measurement scene")
         ax = fig.gca(projection='3d')
-        vertices = np.array([[-sample_size/2, -sample_size/2, 0.0],
-                             [sample_size/2, -sample_size/2, 0.0],
-                             [sample_size/2, sample_size/2, 0.0],
-                             [-sample_size/2, sample_size/2, 0.0]])
-        verts = [list(zip(vertices[:, 0],
-                          vertices[:, 1], vertices[:, 2]))]
+        
+        list_of_sample_verts = []
+        # Sample top
+        list_of_sample_verts.append(np.array([[-L_x/2, -L_y/2, 0.0],
+                             [L_x/2, -L_y/2, 0.0],
+                             [L_x/2, L_y/2, 0.0],
+                             [-L_x/2, L_y/2, 0.0]]))
+        #lx 1                     
+        list_of_sample_verts.append(np.array([[-L_x/2, -L_y/2, 0.0],
+                             [L_x/2, -L_y/2, 0.0],
+                             [L_x/2, -L_y/2, -sample_thickness],
+                             [-L_x/2, -L_y/2, -sample_thickness]]))
+        # lx 2
+        list_of_sample_verts.append(np.array([[-L_x/2, L_y/2, 0.0],
+                              [-L_x/2, L_y/2, -sample_thickness],
+                              [L_x/2, L_y/2, -sample_thickness],
+                              [L_x/2, L_y/2, 0.0]]))
+        #ly 1
+        list_of_sample_verts.append(np.array([[-L_x/2, -L_y/2, 0.0],
+                              [-L_x/2, -L_y/2, -sample_thickness],
+                              [-L_x/2, L_y/2, -sample_thickness],
+                              [-L_x/2, L_y/2, 0.0]]))
+        #ly 2
+        list_of_sample_verts.append(np.array([[L_x/2, -L_y/2, 0.0],
+                             [L_x/2, L_y/2, 0.0],
+                             [L_x/2, L_y/2, -sample_thickness],
+                             [L_x/2, -L_y/2, -sample_thickness]]))
+        
+        for jv in np.arange(len(list_of_sample_verts)):
+            verts = [list(zip(list_of_sample_verts[jv][:, 0],
+                          list_of_sample_verts[jv][:, 1], list_of_sample_verts[jv][:, 2]))]
+            # patch plot
+            collection = Poly3DCollection(verts,
+                                          linewidths=0.5, alpha=0.5, edgecolor='tab:blue', zorder=2)
+            collection.set_facecolor('tab:blue')
+            ax.add_collection3d(collection)
+        
+        # Baffle
+        baffle = np.array([[-baffle_size/2, -baffle_size/2, -sample_thickness],
+                         [baffle_size/2, -baffle_size/2, -sample_thickness],
+                         [baffle_size/2, baffle_size/2, -sample_thickness],
+                         [-baffle_size/2, baffle_size/2, -sample_thickness]])
+        
+        verts = [list(zip(baffle[:, 0], baffle[:, 1], baffle[:, 2]))]
         # patch plot
         collection = Poly3DCollection(verts,
-                                      linewidths=2, alpha=0.3, edgecolor='black', zorder=2)
-        collection.set_facecolor('red')
+                                      linewidths=0.5, alpha=0.5, edgecolor='grey', zorder=2)
+        collection.set_facecolor('grey')
         ax.add_collection3d(collection)
         
-        # plot receiver
+        # plot source
+        if self.source != None:
+            ax.scatter(self.source.coord[0, 0],self.source.coord[0, 1], self.source.coord[0, 2],
+                       s=200, marker = '*', color='red', alpha = 0.5)
+        
+        
+        #plot receiver
         for r_coord in range(self.receivers.coord.shape[0]):
-            ax.plot([self.receivers.coord[r_coord, 0]], 
+            ax.scatter([self.receivers.coord[r_coord, 0]], 
                     [self.receivers.coord[r_coord, 1]], 
                     [self.receivers.coord[r_coord, 2]], 
-                    marker='${}$'.format(r_coord),
-                    markersize=12, color='black')
-        ax.set_title(title)
-        ax.set_xlabel('X axis')
-        # plt.xticks([], [])
-        ax.set_ylabel('Y axis')
-        # plt.yticks([], [])
-        ax.set_zlabel('Z axis')
-        # ax.grid(linestyle = ' ', which='both')
-        ax.set_xlim((-vsam_size/2, vsam_size/2))
-        ax.set_ylim((-vsam_size/2, vsam_size/2))
-        ax.set_zlim((0, vsam_size))
-        ax.view_init(elev=51, azim=-31)
+                    marker='o', s=12, color='blue', alpha = 0.7)
+        
+        ax.set_title("Measurement scene")
+        ax.set_xlabel(r'$x$ [m]')
+        ax.set_xticks([-baffle_size/2, -L_x/2, L_x/2, baffle_size/2])
+        ax.set_ylabel(r'$y$ [m]')
+        ax.set_yticks([-L_y/2, L_y/2])
+        ax.set_zlabel(r'$z$ [m]')
+        ax.set_zticks([-sample_thickness, 1.0, 2, 3])
+        ax.grid(False)
+        ax.set_xlim((-baffle_size/2, baffle_size/2))
+        ax.set_ylim((-baffle_size/2, baffle_size/2))
+        ax.set_zlim((-sample_thickness, baffle_size))
+        ax.view_init(elev=elev, azim=azim)
+        plt.tight_layout()
+        filename = 'measurement_scene.pdf'
+        plt.savefig(fname = self.main_folder /self.name / filename, format='pdf', dpi = 300)
+        plt.show()
 
     def stepper_run_base(self, motor, steps_to_send):
         """ Base method to move a motor
@@ -676,7 +788,7 @@ class ScannerMeasurement():
             whether to plot the FRF or not
         """
         self.repetitions = repetitions
-        yt_list = []
+        #yt_list = []
         for jrec in range(self.receivers.coord.shape[0]):
             print(f'\n Meas number {jrec+1} of {self.receivers.coord.shape[0]}')
             # Move the motor
@@ -685,7 +797,7 @@ class ScannerMeasurement():
             ####
             # Take measurement and save it #ToDo
             
-            y_rep_list = []
+            # y_rep_list = []
             for jmeas in range(self.repetitions):
                 if meas_with_ni:
                     print("Solving sweep problems")
@@ -695,7 +807,7 @@ class ScannerMeasurement():
                 # if plot_frf:
                 #     self.plot_spk(yt_obj)
                 
-                y_rep_list.append(yt_obj)
+                #y_rep_list.append(yt_obj)
                 # ptta saving
                 filename = 'rec' + str(int(jrec)) +\
                     '_m' + str(int(jmeas)) + '.hdf5'
@@ -704,7 +816,7 @@ class ScannerMeasurement():
                 # plot FRF
                 
             # append all to main list
-            yt_list.append(y_rep_list)
+            #yt_list.append(y_rep_list)
             # Take temperature and humidity
             self.temperature_list.append(self.temperature_current)
             self.humidity_list.append(self.humidity_current)
@@ -712,7 +824,7 @@ class ScannerMeasurement():
         self.board.shutdown()
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
-        return yt_list
+        #return yt_list
     
     
     def take_measurements(self, repetitions = 1, meas_name = 'name'):
@@ -729,12 +841,13 @@ class ScannerMeasurement():
         for jmeas in range(self.repetitions):
             print('Taking measurement #{}'.format(jmeas))
             yt_obj = self.pytta_play_rec()
-            # ptta saving
-            filename = meas_name +\
-                '_m' + str(int(jmeas)) + '.hdf5'
-            complete_path = self.main_folder / self.name / 'measured_signals'
-            pytta.save(str(complete_path / filename), yt_obj)
+            # # ptta saving
+            # filename = meas_name +\
+            #     '_m' + str(int(jmeas)) + '.hdf5'
+            # complete_path = self.main_folder / self.name / 'measured_signals'
+            # pytta.save(str(complete_path / filename), yt_obj)
             # plot FRF
+        return yt_obj
     
     def plot_spk(self, yt_obj):
         """ Plot magnitude of FRF
@@ -789,11 +902,14 @@ class ScannerMeasurement():
         with path_filename.open(mode = 'rb') as f:
             tmp_dict = pickle.load(f)
         f.close()
+        self.__dict__.update(tmp_dict)
         self.set_meas_sweep(method = self.method, 
             freq_min = self.freq_min, freq_max = self.freq_max,
             n_zeros_pad = self.n_zeros_pad)
+        self.Nsamples = len(self.xt.timeSignal[:,0])
         self.pytta_play_rec_setup()
         self.__dict__.update(tmp_dict)
+        
         
     def load_meas_files(self,):
         """Load all measurement files

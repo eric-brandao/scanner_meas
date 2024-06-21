@@ -1,0 +1,21 @@
+samplename_arraykeyword_ddmmaaaa
+
+samplename
+     - melamine_L60cm_d3cm_s100cm
+
+arraykeyword
+     - 2mics
+     - PU
+     - random
+     - line
+     - 2line
+     - planar
+     - 2planar
+     - 3D
+     - validation
+
+
+To do
+- Fix path post processing
+- Plot IRs no window
+- 3D plot of scene (in measurement)

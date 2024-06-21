@@ -6,7 +6,7 @@ utils module for the scanner
 """
 # Imports
 import numpy as np
-# from scipy import spatial
+from scipy import spatial
 # from tqdm import tqdm
 # from sequential_measurement import ScannerMeasurement
 import pytta
