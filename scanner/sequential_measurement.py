@@ -101,7 +101,8 @@ class ScannerMeasurement():
             microphone_type = 'Behringer ECM 8000',
             audio_interface = 'M-audio Fast Track Pro',
             amplifier = 'BK 2718',
-            source_type = 'spherical speaker', source = None):
+            source_type = 'spherical speaker', source = None, 
+            start_new_measurement = True):
         """
 
         Parameters
@@ -152,11 +153,14 @@ class ScannerMeasurement():
             String describing the source type (e.g. spherical speaker, dipole, ...)
         source : obj
             source object containing its coordinates
+        start_new_measurement : bool
+            Boolean variable to inform if you want to start a new measurement or not. If True, it gives
+            permission to the code to create a new "measured_signals" folder.
         """
         # folder checking
         self.main_folder = Path(main_folder)
         self.name = name
-        self.check_main_folder()
+        self.check_main_folder(generate_folder = start_new_measurement)
         
         # audio signals checking
         self.fs = fs
@@ -212,16 +216,20 @@ class ScannerMeasurement():
                                                        self.date_of_measurement.month,
                                                        self.date_of_measurement.year))
         
-    def check_main_folder(self,):
+    def check_main_folder(self, generate_folder = True):
         """ Check if the main folder already exists or create new folder
         """
         folder_to_test = self.main_folder / self.name
-        if folder_to_test.exists():
+        if folder_to_test.exists() and generate_folder:
             print('Measurement path already exists. Proceed with care as you may loose data. Use this object to read only.')
-        else:
+        elif folder_to_test.exists() and generate_folder == False:
+            print("You probably want to load measurement files that you copied or moved. I'll not create any new folders. Use this object to read only.")
+        elif folder_to_test.exists() == False and generate_folder:
             folder_to_test.mkdir(parents = False, exist_ok = False)
             measured_signals_folder = folder_to_test / 'measured_signals'
             measured_signals_folder.mkdir(parents = False, exist_ok = False)
+        else:
+            print("The measurement files you seek do not exist in the folder you specified")
 
     def ni_set_config_dicts(self, input_dict = dict(terminal = 'cDAQ1Mod1/ai0', 
              mic_sens = 51.4, current_exc_sensor = 0.0022,
@@ -279,7 +287,7 @@ class ScannerMeasurement():
         self.n_zeros_pad = n_zeros_pad
         
         # save up to here - signal object is not pickable.
-        self.save()
+        # self.save()
         # set pytta sweep
         xt = pytta.generate.sweep(freqMin = self.freq_min,
           freqMax = self.freq_max, samplingRate = self.fs,

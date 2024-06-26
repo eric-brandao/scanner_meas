@@ -18,4 +18,3 @@ arraykeyword
 To do
 - Fix path post processing
 - Plot IRs no window
-- 3D plot of scene (in measurement)

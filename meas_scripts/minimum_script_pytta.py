@@ -25,7 +25,8 @@ meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
     microphone_type = 'Behringer ECM 8000',
     audio_interface = 'M-audio Fast Track Pro',
     amplifier = 'BK 2718',
-    source_type = 'spherical speaker', source = source)
+    source_type = 'spherical speaker', source = source,
+    start_new_measurement = True)
 
 #%%
 meas_obj.set_measurement_date()
@@ -49,6 +50,7 @@ receiver_obj = Receiver()
 receiver_obj.double_planar_array(x_len=0.65,n_x=5,y_len=0.57,n_y=5, zr=0.015, dz=0.03)
 #receiver_obj.double_rec(z_dist = 0.02)
 pt0 = np.array([0.0, 0.0, 0.02]); "--> Coordinates where the michophone is"
+# This next method saves everything automaically.
 meas_obj.set_receiver_array(receiver_obj, pt0 = pt0)
 
 

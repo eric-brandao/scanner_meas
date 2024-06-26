@@ -32,38 +32,49 @@ from sources import Source
 
 # utils
 import utils
-#from sequential_measurement import ScannerMeasurement
+from sequential_measurement import ScannerMeasurement
 
 class InsituMeasurementPostPro():
     """ class to do post processing of insitu measurement
     """
-    def __init__(self, main_folder = 'D:', name = 'samplename',                 
-                 fs = 51200, meas_obj = None, xt = None, 
-                 receivers = None, source = None,
-                 repetitions = 2, t_bypass = 0):
-        if meas_obj is not None:
-            self.main_folder = meas_obj.main_folder
-            self.name = meas_obj.name
-        else:
-            self.main_folder = Path(main_folder)
-            self.name = name
-        self.receivers = receivers
-        self.source = source
-        self.repetitions = 2
-        self.xt = xt
-        self.fs = fs
+    def __init__(self, main_folder = 'D:', name = 'samplename', t_bypass = 0):               
+                 # fs = 51200, meas_obj = None, xt = None, 
+                 # receivers = None, source = None,
+                 # repetitions = 2, t_bypass = 0):
+        
+        # load your measurement object without permission to start a new measurement
+        self.meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
+                                           start_new_measurement = False)
+        
+        # load all measured information
+        self.meas_obj.load()
+        
+        # Correct the main_folder variable
+        self.meas_obj.main_folder = Path(main_folder)
+        
+        # if meas_obj is not None:
+        #     self.main_folder = meas_obj.main_folder
+        #     self.name = meas_obj.name
+        # else:
+        #     self.main_folder = Path(main_folder)
+        #     self.name = name
+        # self.receivers = receivers
+        # self.source = source
+        # self.repetitions = 2
+        # self.xt = xt
+        # self.fs = fs
         self.t_bypass = t_bypass
         
     def load_meas_files(self,):
         """Load all measurement files
         """
         yt_list = []
-        for jrec in range(self.receivers.coord.shape[0]):
+        for jrec in range(self.meas_obj.receivers.coord.shape[0]):
             y_rep_list = []
-            for jmeas in range(self.repetitions):
+            for jmeas in range(self.meas_obj.repetitions):
                 filename = 'rec' + str(int(jrec)) +\
                         '_m' + str(int(jmeas)) + '.hdf5'
-                complete_path = self.main_folder / self.name / 'measured_signals'
+                complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'measured_signals'
                 med_dict = pytta.load(str(complete_path / filename))
                 keyslist = list(med_dict.keys())
                 y_rep_list.append(med_dict[keyslist[0]])
@@ -79,17 +90,17 @@ class InsituMeasurementPostPro():
         yt : pytta object
             output signal
         """
-        ht = pytta.ImpulsiveResponse(excitation = self.xt, 
-             recording = yt, samplingRate = self.xt.samplingRate, regularization = regularization)
+        ht = pytta.ImpulsiveResponse(excitation = self.meas_obj.xt, 
+             recording = yt, samplingRate = self.meas_obj.xt.samplingRate, regularization = regularization)
         
         return ht
     
     def mean_ir(self, ht_rep_list, only_linear_part = True):
         """Computes mean IR as in Pytta"""
-        ht_stack = np.zeros((ht_rep_list[0].timeSignal.shape[0], self.repetitions),
+        ht_stack = np.zeros((ht_rep_list[0].timeSignal.shape[0], self.meas_obj.repetitions),
                             dtype=ht_rep_list[0].timeSignal.dtype)
         
-        for jmeas in range(self.repetitions):
+        for jmeas in range(self.meas_obj.repetitions):
             ht_stack[:, jmeas] = ht_rep_list[jmeas].timeSignal.flatten()
         
         ht_mean = np.mean(ht_stack, axis = 1, dtype=ht_rep_list[0].timeSignal.dtype)
@@ -106,13 +117,13 @@ class InsituMeasurementPostPro():
         """Compute all Impulse responses
         """
         ht_list = []
-        bar = tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+        bar = tqdm(total = self.meas_obj.receivers.coord.shape[0], leave = bar_leave,
                 desc = 'Processing IRs')
         # For each receiver compute repeated ht
-        for jrec in range(self.receivers.coord.shape[0]):
+        for jrec in range(self.meas_obj.receivers.coord.shape[0]):
             ht_rep_list = []
             # loop through repetitions
-            for jmeas in range(self.repetitions):
+            for jmeas in range(self.meas_obj.repetitions):
                 ht = self.ir(yt_list[jrec][jmeas], regularization = regularization)
                 ht_rep_list.append(ht.IR)
             # take mean IR
@@ -122,27 +133,22 @@ class InsituMeasurementPostPro():
         bar.close()
         return ht_list
     
-    
-    
-    
     def compute_all_ir_load(self, regularization = True, 
                        only_linear_part = True, bar_leave = True):
         
        """Compute all Impulse responses while loading measurement files. Saves memory
        """
-       # ht_list = []
-       # bar = tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
-       #         desc = 'Processing IRs')
+       
        # For each receiver compute repeated ht
-       for jrec in range(self.receivers.coord.shape[0]):
+       for jrec in range(self.meas_obj.receivers.coord.shape[0]):
            print('Loading and computing IR for Rec {}'.format(jrec))
            ht_rep_list = []
            # loop through repetitions
-           for jmeas in range(self.repetitions):
+           for jmeas in range(self.meas_obj.repetitions):
                # Load measurement yt files
                filename = 'rec' + str(int(jrec)) +\
                        '_m' + str(int(jmeas)) + '.hdf5'
-               complete_path = self.main_folder / self.name / 'measured_signals'
+               complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'measured_signals'
                med_dict = pytta.load(str(complete_path / filename))
                keyslist = list(med_dict.keys())
                yt = med_dict[keyslist[0]]               
@@ -158,19 +164,15 @@ class InsituMeasurementPostPro():
            
            # ptta saving
            filename = 'ht' + str(int(jrec)) + '.hdf5'
-           complete_path = self.main_folder / self.name / 'impulse_responses'
+           complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'impulse_responses'
            pytta.save(str(complete_path / filename), ht_mean_pytta)
            
-           # ht_list.append(ht_mean_pytta)
-       #     bar.update(1)
-       # bar.close()
-       # return ht_list
        
     def load_ir_byindex(self, idir = 0):
         """" Load IR by index of array mic, and return the pytta object"""
         
         filename = 'ht' + str(int(idir)) + '.hdf5'
-        complete_path = self.main_folder / self.name / 'impulse_responses'
+        complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'impulse_responses'
         med_dict = pytta.load(str(complete_path / filename))
         keyslist = list(med_dict.keys())
         ht = med_dict[keyslist[0]]
@@ -183,17 +185,17 @@ class InsituMeasurementPostPro():
         ht = self.load_ir_byindex(0)
         
         # initialize
-        self.ht_mtx = np.zeros((self.receivers.coord.shape[0], len(ht.timeSignal)))
+        self.ht_mtx = np.zeros((self.meas_obj.receivers.coord.shape[0], len(ht.timeSignal)))
         self.ht_mtx[0, :] = ht.timeSignal.flatten()
         # For each receiver compute repeated ht
-        for jrec in range(1, self.receivers.coord.shape[0]):
+        for jrec in range(1, self.meas_obj.receivers.coord.shape[0]):
             ht = self.load_ir_byindex(jrec)
             self.ht_mtx[jrec, :] = ht.timeSignal.flatten()
         self.time_ht = ht.timeVector.flatten()
+        self.ht_length = len(self.time_ht)
         # print("ht matrix has {:.2f} MB".format(ht_mtx.nbytes/(1024*1024)))
     
-    def set_adrienne_win(self, tstart = 0, dt_fadein = 0.5e-3, t_cutoff = 15e-3, dt_fadeout = 1e-3,
-                         window_size = 2**18):
+    def set_adrienne_win(self, tstart = 0, dt_fadein = 0.5e-3, t_cutoff = 15e-3, dt_fadeout = 1e-3):
         """ set the Adrienne window
         
         Parameters:
@@ -210,24 +212,24 @@ class InsituMeasurementPostPro():
                window's number of samples (same as IR) 
         """
         # initiallize
-        self.adrienne_win = np.zeros(window_size)
+        self.adrienne_win = np.zeros(self.ht_length)
         
         # blackman-harris for fade in
-        bh_fadein = windows.blackmanharris(int(2*dt_fadein*self.fs))
+        bh_fadein = windows.blackmanharris(int(2*dt_fadein*self.meas_obj.fs))
         bh_fadein = bh_fadein[:int(len(bh_fadein)/2)]
         
         # blackman-harris for fade out
-        bh_fadeout = windows.blackmanharris(int(2*dt_fadeout*self.fs))
+        bh_fadeout = windows.blackmanharris(int(2*dt_fadeout*self.meas_obj.fs))
         bh_fadeout = bh_fadeout[int(len(bh_fadeout)/2):]
         
         # Adrienne win during fade in
-        self.adrienne_win[int((tstart-dt_fadein)*self.fs):int((tstart-dt_fadein)*self.fs)+len(bh_fadein)] = bh_fadein
+        self.adrienne_win[int((tstart-dt_fadein)*self.meas_obj.fs):int((tstart-dt_fadein)*self.meas_obj.fs)+len(bh_fadein)] = bh_fadein
         
         # Adrienne win cte
-        self.adrienne_win[int((tstart-dt_fadein)*self.fs)+len(bh_fadein):int(t_cutoff*self.fs)] = 1
+        self.adrienne_win[int((tstart-dt_fadein)*self.meas_obj.fs)+len(bh_fadein):int(t_cutoff*self.meas_obj.fs)] = 1
         
         # Adrienne win during fade out
-        self.adrienne_win[int(t_cutoff*self.fs):int((t_cutoff)*self.fs)+len(bh_fadeout)] = bh_fadeout
+        self.adrienne_win[int(t_cutoff*self.meas_obj.fs):int((t_cutoff)*self.meas_obj.fs)+len(bh_fadeout)] = bh_fadeout
         
         #plt.plot(adrienne_win)
         return self.adrienne_win
@@ -241,7 +243,7 @@ class InsituMeasurementPostPro():
             self.nfft_half = int(nfft/2)
         else:
             self.nfft_half = int((nfft+1)/2)           
-        self.freq_Hw = np.linspace(0, (nfft-1)*self.fs/nfft, nfft)[:self.nfft_half]
+        self.freq_Hw = np.linspace(0, (nfft-1)*self.meas_obj.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.htw_mtx, axis = 1)[:,:self.nfft_half]
         
     def compute_spk(self,):
