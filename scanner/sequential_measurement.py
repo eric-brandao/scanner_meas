@@ -91,11 +91,11 @@ class ScannerMeasurement():
     
     def __init__(self, main_folder = 'D:', name = 'samplename',                 
             fs = 51200, fft_degree = 18, 
-            start_stop_margin = [0, 4.5], mic_sens = None,
+            start_stop_margin = [0.1, 1.0], mic_sens = None,
             x_pwm_pin = 2, x_digital_pin = 24,
             y_pwm_pin = 3, y_digital_pin = 26,
-            z_pwm_pin = 4, z_digital_pin = 28,
-            dht_pin = 40, pausing_time_array = [5, 8, 7],
+            z_pwm_pin = 5, z_digital_pin = 28,
+            dht_pin = 40, pausing_time_array = [8, 8, 8],
             material = None, material_type = 'melamine_L60cm_d4cm',
             temperature = 20, humidity = 0.5,
             microphone_type = 'Behringer ECM 8000',
@@ -189,6 +189,9 @@ class ScannerMeasurement():
         self.temperature = temperature
         self.humidity = humidity
         
+        # Felipe e João added
+        self.initError = 0
+        
         # material
         self.material = material
         self.material_type = material_type
@@ -226,8 +229,12 @@ class ScannerMeasurement():
             print("You probably want to load measurement files that you copied or moved. I'll not create any new folders. Use this object to read only.")
         elif folder_to_test.exists() == False and generate_folder:
             folder_to_test.mkdir(parents = False, exist_ok = False)
+            # response signals
             measured_signals_folder = folder_to_test / 'measured_signals'
             measured_signals_folder.mkdir(parents = False, exist_ok = False)
+            # impulse responses
+            impulse_responses_folder = folder_to_test / 'impulse_responses'
+            impulse_responses_folder.mkdir(parents = False, exist_ok = False)
         else:
             print("The measurement files you seek do not exist in the folder you specified")
 
@@ -286,9 +293,7 @@ class ScannerMeasurement():
         self.method = method
         self.n_zeros_pad = n_zeros_pad
         
-        # save up to here - signal object is not pickable.
-        # self.save()
-        # set pytta sweep
+        # set pytta sweep with zero padding if wanted
         xt = pytta.generate.sweep(freqMin = self.freq_min,
           freqMax = self.freq_max, samplingRate = self.fs,
           fftDegree = self.fft_degree, startMargin = self.start_margin,
@@ -296,18 +301,17 @@ class ScannerMeasurement():
           method = self.method, windowing='hann')
         new_xt = np.zeros(len(xt.timeSignal[:,0]) + n_zeros_pad)
         new_xt[:len(xt.timeSignal[:,0])] = xt.timeSignal[:,0]
-        
-        # time = np.linspace(0, (2**self.fft_degree-1)/self.fs, 2**self.fft_degree)
-        # xt = chirp(t = time, f0 = self.freq_min, t1 = time[-1], f1 = self.freq_max,
-        #            method = 'logarithmic')
-        # new_xt = np.zeros(len(xt) + n_zeros_pad)
-        # new_xt[:len(xt)] = xt
-        
+
         self.xt = pytta.classes.SignalObj(
             signalArray = new_xt, 
-            domain='time', samplingRate = self.fs)
+            domain='time', samplingRate = self.fs, freqMin = self.freq_min,
+              freqMax = self.freq_max)
 
         self.Nsamples = len(self.xt.timeSignal[:,0])
+
+        # save the sweep
+        complete_path = self.main_folder / self.name / 'measured_signals'
+        pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
     
     def ni_set_play_rec_tasks(self, ):
         
@@ -451,7 +455,20 @@ class ScannerMeasurement():
         print('Acqusition ended')
         return yt_rec_obj
     
-    def ir(self, yt, regularization = False):
+    def pytta_measure_loopback(self,):
+        """ Measure system loopback of your sound card if you want
+        
+        Applicable to audio interfaces - should be flat inside the sweep range
+        """
+        print("I hope you are measuring your loopback IR")
+        yt_lb = self.pytta_play_rec()
+        ht_lb = self.ir(yt_lb, regularization = True)
+        ht_lb.IR.plot_freq(xLim = [20, 20000])
+        # saving loophack IR
+        complete_path = self.main_folder / self.name / 'impulse_responses'
+        pytta.save(str(complete_path / 'ht_lb.hdf5'), ht_lb.IR)
+    
+    def ir(self, yt, regularization = True):
         """ Computes the impulse response of a given output
         
         Parameters
@@ -507,9 +524,15 @@ class ScannerMeasurement():
              'y' : self.pausing_time_array[1], 
              'z' : self.pausing_time_array[2]}
         
-        print("We are moving y motor to make sure everything is working.")
-        self.move_motor(self, motor_to_move = 'y', dist = -0.001)
-        self.move_motor(self, motor_to_move = 'y', dist = 0.001)
+        # print("We are moving y motor to make sure everything is working.")
+        # self.move_motor(self, motor_to_move = 'y', dist = -0.001)
+        # self.move_motor(self, motor_to_move = 'y', dist = 0.001)
+        
+        # Alteração Felipe e João
+        print("Setting up motors... Moving y-axis +1mm and -1mm")
+        self.move_motor(motor_to_move = 'y', dist = -0.001)
+        self.move_motor(motor_to_move = 'y', dist = 0.001)
+        print("Setup complete! y-axis moved correctly")
 
     def set_dht_sensor(self,):
         """ Set sensor to measure humifdity and temperature
@@ -570,10 +593,13 @@ class ScannerMeasurement():
         self.receivers.coord = order1
         # creating the matrix with all distances between all points
         self.stand_array = utils.matrix_stepper(self.pt0, self.receivers.coord)
+        # save and re-load to reconstruct xt
+        print("I am saving everything you configured so far. I'll also load the x(t)")
         self.save()
+        
         self.load()
         
-    def plot_scene(self, title = '', L_x = 0.6, L_y = 0.6, sample_thickness = 0.1,
+    def plot_scene(self, L_x = 0.6, L_y = 0.6, sample_thickness = 0.1,
                    baffle_size = 1.2, elev = 30, azim = 45):
         """ Plot of the scene using matplotlib - not redered
     
@@ -753,7 +779,7 @@ class ScannerMeasurement():
         micro_steps : int
             number of micro steps
         """
-        self.stepper_run(self.motor_dict[motor_to_move], dist = dist)
+        self.stepper_run(self.motor_dict[motor_to_move], dist = -dist)
         self.pause(pausing_time = self.motor_pause_dict[motor_to_move])
         
     def move_motor_xyz(self, distance_vector):
@@ -781,7 +807,7 @@ class ScannerMeasurement():
         print('\n Moving ended. I will shut down the board instance! \n')
         self.board.shutdown()
         
-    def sequential_measurement(self, meas_with_ni = True, 
+    def sequential_measurement(self, meas_with_ni = False, 
                                repetitions = 1,
                                plot_frf = False):
         """ Move all motors sequentially through the array positions
@@ -911,9 +937,13 @@ class ScannerMeasurement():
             tmp_dict = pickle.load(f)
         f.close()
         self.__dict__.update(tmp_dict)
-        self.set_meas_sweep(method = self.method, 
-            freq_min = self.freq_min, freq_max = self.freq_max,
-            n_zeros_pad = self.n_zeros_pad)
+        # self.set_meas_sweep(method = self.method, 
+        #     freq_min = self.freq_min, freq_max = self.freq_max,
+        #     n_zeros_pad = self.n_zeros_pad)
+        complete_path = self.main_folder / self.name / 'measured_signals'
+        med_dict = pytta.load(str(complete_path / 'xt.hdf5'))
+        keyslist = list(med_dict.keys())
+        self.xt = med_dict[keyslist[0]]
         self.Nsamples = len(self.xt.timeSignal[:,0])
         self.pytta_play_rec_setup()
         self.__dict__.update(tmp_dict)

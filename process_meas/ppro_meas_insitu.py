@@ -26,6 +26,7 @@ from scipy.signal import windows, resample, chirp
 # Pytta imports
 import pytta
 
+
 # Receiver class
 from receivers import Receiver
 from sources import Source
@@ -257,6 +258,23 @@ class InsituMeasurementPostPro():
             self.nfft_half = int((nfft+1)/2)           
         self.freq_Hw = np.linspace(0, (nfft-1)*self.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
+        
+    def reset_freq_resolution(self, freq_init = 100, freq_end = 4000, delta_freq = 5):
+        """ If you don't want all your frequencies, use this to generate a new
+        self.Hwww_mtx
+        """
+        # initial freq resolution
+        delta_freq_original = self.freq_Hw[1]
+        # indexes of frequencies
+        freq_init_idf = np.where(self.freq_Hw <= freq_init)[0][-1]
+        freq_end_idf = np.where(self.freq_Hw >= freq_end)[0][0]
+        
+        # new freq vector
+        Didf = int(delta_freq/delta_freq_original)
+        self.freq_Hw = self.freq_Hw[freq_init_idf:freq_end_idf+delta_freq:Didf]
+        
+        # new FRF's
+        self.Hww_mtx = self.Hww_mtx[:,freq_init_idf:freq_end_idf+delta_freq:Didf]
         
     def moving_avg(self, idir = 0, nfft = 8192):
         """ Computes moving average on spectrum
