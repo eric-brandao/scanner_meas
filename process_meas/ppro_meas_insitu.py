@@ -49,7 +49,6 @@ class InsituMeasurementPostPro():
         
         # load all measured information
         self.meas_obj.load()
-        
         # Correct the main_folder variable
         self.meas_obj.main_folder = Path(main_folder)
         
@@ -321,8 +320,8 @@ class InsituMeasurementPostPro():
             htw = self.htw_mtx[idir,:]/np.amax(self.htw_mtx[idir,:])
             
         plt.figure()
-        plt.plot(self.time_ht, ht , '--k', label = 'raw')
-        plt.plot(self.time_ht, htw, '-r', label = 'windowed')
+        plt.plot(self.time_ht, ht , '-k', label = 'raw', linewidth = 2)
+        plt.plot(self.time_ht, htw, '-r', label = 'windowed', alpha = 0.7)
         plt.grid()
         plt.legend()
         plt.xlim(xlims)

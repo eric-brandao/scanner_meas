@@ -9,8 +9,6 @@ Created on Thu Jun 27 10:52:45 2024
 """
 Created on Thu Oct 27 15:23:05 2022 - minimum measurement script
 """
-import sys
-sys.path.append('D:/Work/dev/scanner_meas/scanner')
 import numpy as np
 from sequential_measurement import ScannerMeasurement
 from receivers import Receiver
@@ -52,6 +50,11 @@ meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
 #%% Do the pytta play-rec setup. Channel numbers is super important.
 meas_obj.pytta_play_rec_setup(in_channel = 2, out_channel = 1, 
                          output_amplification = -3)
+
+#%% measure loopback response and save it (if wanted)
+### plug the output of the sound card on the input, measure and save the IR. 
+### Serves to know the latency if desired
+meas_obj.pytta_measure_loopback()
 
 #%% You can test a measurement if you want - check for clipping and other potential problems
 ### If you feel like changing your sweep design, you can re-run things 

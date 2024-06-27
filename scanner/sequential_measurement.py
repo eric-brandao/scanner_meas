@@ -265,7 +265,7 @@ class ScannerMeasurement():
         
     
     def set_meas_sweep(self, method = 'logarithmic', freq_min = 1,
-                       freq_max = None, n_zeros_pad = 200):
+                       freq_max = None, n_zeros_pad = 200, save_xt = True):
         """Set the input signal object
         
         The input signal is called "xt". This is to ease further
@@ -310,8 +310,10 @@ class ScannerMeasurement():
         self.Nsamples = len(self.xt.timeSignal[:,0])
 
         # save the sweep
-        complete_path = self.main_folder / self.name / 'measured_signals'
-        pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
+        #print(self.main_folder)
+        if save_xt:
+            complete_path = self.main_folder / self.name / 'measured_signals'
+            pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
     
     def ni_set_play_rec_tasks(self, ):
         
@@ -937,13 +939,16 @@ class ScannerMeasurement():
             tmp_dict = pickle.load(f)
         f.close()
         self.__dict__.update(tmp_dict)
-        # self.set_meas_sweep(method = self.method, 
-        #     freq_min = self.freq_min, freq_max = self.freq_max,
-        #     n_zeros_pad = self.n_zeros_pad)
-        complete_path = self.main_folder / self.name / 'measured_signals'
-        med_dict = pytta.load(str(complete_path / 'xt.hdf5'))
-        keyslist = list(med_dict.keys())
-        self.xt = med_dict[keyslist[0]]
+
+        try:
+            complete_path = self.main_folder / self.name / 'measured_signals'
+            med_dict = pytta.load(str(complete_path / 'xt.hdf5'))
+            keyslist = list(med_dict.keys())
+            self.xt = med_dict[keyslist[0]]
+        except:
+            self.set_meas_sweep(method = self.method, 
+                    freq_min = self.freq_min, freq_max = self.freq_max,
+                    n_zeros_pad = self.n_zeros_pad, save_xt = False)
         self.Nsamples = len(self.xt.timeSignal[:,0])
         self.pytta_play_rec_setup()
         self.__dict__.update(tmp_dict)
