@@ -20,8 +20,8 @@ name = 'testing_meas'
 main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash
 # arduino_dict = dict()
 meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
-    fs = 44100, fft_degree = 19, 
-    start_stop_margin = [0.1, 0.5], mic_sens = 51.4,
+    fs = 44100, fft_degree = 16, 
+    start_stop_margin = [0.1, 0.1], mic_sens = 51.4,
     x_pwm_pin = 2, x_digital_pin = 24,
     y_pwm_pin = 3, y_digital_pin = 26,
     z_pwm_pin = 4, z_digital_pin = 28,

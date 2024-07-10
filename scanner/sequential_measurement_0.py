@@ -38,7 +38,7 @@ from sources import Source
 
 # NI imports
 import nidaqmx
-from nidaqmx.constants import AcquisitionType, TaskMode, RegenerationMode, Coupling
+from nidaqmx.constants import AcquisitionType, TaskMode, RegenerationMode
 from nidaqmx.constants import SoundPressureUnits, VoltageUnits
 #from MiniRev import MiniRev as mr
 
@@ -343,7 +343,6 @@ class ScannerMeasurement():
         """
         #input_unit = SoundPressureUnits.PA
         # Max of sound card for dBFS
-        Coupling.AC
         self.max_val_dbFS = self.input_dict['max_min_val'][1]
         # Instantiate NI object
         self.input_task = nidaqmx.Task(new_task_name = 'intask' + str(self.rn))
@@ -368,15 +367,14 @@ class ScannerMeasurement():
                 current_excit_val = self.input_dict['current_exc_sensor'])
             
         self.input_task.timing.cfg_samp_clk_timing(self.fs,
-            sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE, 
-            samps_per_chan = self.Nsamples)#self.Nsamples
+            sample_mode = AcquisitionType.FINITE, 
+            samps_per_chan = self.Nsamples)
             
         # return input_task
     
     def ni_get_output_task(self, ):
         """ Get output task for NI
         """
-        Coupling.AC
         self.output_task = nidaqmx.Task(new_task_name = 'outtask' + str(self.rn))
         
         self.output_task.ao_channels.add_ao_voltage_chan(
@@ -386,10 +384,10 @@ class ScannerMeasurement():
             units = VoltageUnits.VOLTS)
         
         self.output_task.timing.cfg_samp_clk_timing(self.fs,
-            sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE,
+            sample_mode = AcquisitionType.FINITE,
             samps_per_chan = self.Nsamples)
         
-        self.output_task.out_stream.regen_mode = RegenerationMode.DONT_ALLOW_REGENERATION #RegenerationMode.ALLOW_REGENERATION
+        self.output_task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION
         
         self.output_task.write(self.xt.timeSignal[:,0])
         # print(a)
@@ -406,7 +404,6 @@ class ScannerMeasurement():
             output signal
         """
         self.ni_set_play_rec_tasks()
-        # Coupling.AC
         # Initialize for measurement
         print('Acqusition started')
         self.output_task.start()
@@ -437,19 +434,15 @@ class ScannerMeasurement():
                              output_amplification = -3):
         """ Configure measurement of response signal using pytta and sound card
         """
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.output_amplification = output_amplification
-        
         self.pytta_meas = pytta.generate.measurement('playrec',
             excitation = self.xt,
             samplingRate = self.fs,
             freqMin = self.freq_min,
             freqMax = self.freq_max,
             device = self.device,
-            inChannels=[self.in_channel],
-            outChannels=[self.out_channel],
-            outputAmplification = self.output_amplification)
+            inChannels=[in_channel],
+            outChannels=[out_channel],
+            outputAmplification = output_amplification)
 
     def pytta_play_rec(self,):
         """ Measure response signal using pytta and sound card
@@ -473,7 +466,6 @@ class ScannerMeasurement():
         yt_lb = self.pytta_play_rec()
         ht_lb = self.ir(yt_lb, regularization = True)
         ht_lb.IR.plot_freq(xLim = [20, 20000])
-        ht_lb.plot_time()
         # saving loophack IR
         complete_path = self.main_folder / self.name / 'impulse_responses'
         pytta.save(str(complete_path / 'ht_lb.hdf5'), ht_lb.IR)
@@ -619,7 +611,7 @@ class ScannerMeasurement():
             Sample size.
         """
         fig = plt.figure()
-        ax = fig.add_subplot(projection = '3d') #fig.gca()#projection='3d'
+        ax = fig.gca(projection='3d')
         
         list_of_sample_verts = []
         # Sample top
@@ -958,8 +950,7 @@ class ScannerMeasurement():
                     freq_min = self.freq_min, freq_max = self.freq_max,
                     n_zeros_pad = self.n_zeros_pad, save_xt = False)
         self.Nsamples = len(self.xt.timeSignal[:,0])
-        self.pytta_play_rec_setup(in_channel = self.in_channel, out_channel = self.out_channel, 
-                                  output_amplification = self.output_amplification)
+        self.pytta_play_rec_setup()
         self.__dict__.update(tmp_dict)
         
         

@@ -21,7 +21,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 import scipy.io as io
-from scipy.signal import windows, resample, chirp
+from scipy.signal import windows, resample, chirp, find_peaks, find_peaks_cwt
 
 # Pytta imports
 import pytta
@@ -91,7 +91,8 @@ class InsituMeasurementPostPro():
             output signal
         """
         ht = pytta.ImpulsiveResponse(excitation = self.meas_obj.xt, 
-             recording = yt, samplingRate = self.meas_obj.xt.samplingRate, regularization = regularization)
+             recording = yt, samplingRate = self.meas_obj.xt.samplingRate, regularization = regularization,
+             method = 'linear')
         
         return ht
     
@@ -160,7 +161,7 @@ class InsituMeasurementPostPro():
            ht_mean_pytta = self.mean_ir(ht_rep_list, only_linear_part = only_linear_part)
            
            # Discount the bypass
-           ht_mean_pytta.crop(float(self.t_bypass), float(ht_mean_pytta.timeVector[-1]))
+           # ht_mean_pytta.crop(float(self.t_bypass), float(ht_mean_pytta.timeVector[-1]))
            
            # ptta saving
            filename = 'ht' + str(int(jrec)) + '.hdf5'
@@ -194,6 +195,79 @@ class InsituMeasurementPostPro():
         self.time_ht = ht.timeVector.flatten()
         self.ht_length = len(self.time_ht)
         # print("ht matrix has {:.2f} MB".format(ht_mtx.nbytes/(1024*1024)))
+    
+    def move_ir(self, idir = 0, c0 = 340, 
+                source_coord = [0, 0, 1], receiver_coord = [0, 0, 0.01],
+                plot_ir = False, xlims = (0, 50e-3)):
+        """ Move the IR to physical starting point in time. 
+        
+        It uses an estimate of sound speed and sensor location to compute the onset of the IR.
+        """
+        
+        
+        # compute the physical onset time of IR
+        euclidian_distance = np.linalg.norm(source_coord - receiver_coord)
+        time_onset = euclidian_distance/c0
+        
+        # Find main peak
+        ht_peak_fun = self.ht_mtx[idir,:]
+        # ht_peak_fun = self.ht_mtx[idir,:]/np.amax(self.ht_mtx[idir,:])
+        # ht_peak_fun = self.ht_mtx[idir,:]/np.amax(np.abs(self.ht_mtx[idir,:]))
+        # ht_peak_fun = np.abs(self.ht_mtx[idir,:])/np.amax(np.abs(self.ht_mtx[idir,:]))
+        # ht_peak_fun = np.abs(self.ht_mtx[idir,:]/np.amax(np.abs(self.ht_mtx[idir,:])))
+
+        # peaks_id = find_peaks(ht_peak_fun, height = 0.9)
+        peaks_id = np.where(ht_peak_fun == np.amax(ht_peak_fun))
+        
+        # move whole thing to id 0
+        # self.ht_mtx[idir,:] = np.roll(self.ht_mtx[idir,:], shift = -peaks_id[0][0])
+        
+        # peaks_id = find_peaks_cwt(np.abs(self.ht_mtx[idir,:]/np.amax(np.abs(self.ht_mtx[idir,:]))),
+        #                           np.ones(len(self.ht_mtx[idir,:])))
+        # print(peaks_id)
+        time_of_peak = peaks_id[0][0]/self.meas_obj.fs
+        
+        # find out how many samples to move
+        delta_t = time_of_peak - time_onset
+        # delta_t = np.round(time_of_peak, 6) - np.round(time_onset,6)
+        
+        
+        print("time_onset = {}, delta_t = {}, Ts = {}".format(time_onset, delta_t, 1/self.meas_obj.fs))
+        # n_samples_to_move = int(np.rint(delta_t * self.meas_obj.fs))
+        # n_samples_to_move = int(delta_t * self.meas_obj.fs)
+        n_samples_to_move = int(np.ceil(delta_t * self.meas_obj.fs))
+        # n_samples_to_move = int(np.ceil(time_onset * self.meas_obj.fs))
+        print("samples moved: {}".format(n_samples_to_move))
+        # n_samples_to_move = int(np.floor(delta_t * self.meas_obj.fs))
+        # print(n_samples_to_move)
+        self.ht_mtx[idir,:] = np.roll(self.ht_mtx[idir,:], shift = -n_samples_to_move)
+        # move to onset
+        # self.ht_mtx[idir,:] = np.roll(self.ht_mtx[idir,:], shift = n_samples_to_move)
+        # print("Delta t = {} s, Num of samples to move = {}".format(delta_t, n_samples_to_move))
+        
+        # plot
+        if plot_ir:
+            # normalize
+            ht = self.ht_mtx[idir,:]/np.amax(self.ht_mtx[idir,:])
+            # plot
+            plt.figure()
+            plt.plot(self.time_ht, ht, label = "Rec #{}".format(idir))
+            plt.xlim(xlims)
+            plt.axvline(x = time_onset, color = 'grey', linestyle = '--')
+            plt.axvline(x = time_of_peak, color = 'k', linestyle = '--')
+            plt.grid()
+            plt.xlabel("Time (s)")
+            plt.ylabel("Time (s)")
+            plt.tight_layout()
+        
+    def move_all_ir(self, c0 = 340):
+        """ Move all IRs
+        """
+        # For each receiver compute repeated ht
+        for jrec in range(self.meas_obj.receivers.coord.shape[0]):
+            self.move_ir(idir = jrec, c0 = c0, 
+                        source_coord = self.meas_obj.source.coord, 
+                        receiver_coord = self.meas_obj.receivers.coord[jrec,:])
     
     def set_adrienne_win(self, tstart = 0, dt_fadein = 0.5e-3, t_cutoff = 15e-3, dt_fadeout = 1e-3):
         """ set the Adrienne window
@@ -255,7 +329,7 @@ class InsituMeasurementPostPro():
             self.nfft_half = int(nfft/2)
         else:
             self.nfft_half = int((nfft+1)/2)           
-        self.freq_Hw = np.linspace(0, (nfft-1)*self.fs/nfft, nfft)[:self.nfft_half]
+        self.freq_Hw = np.linspace(0, (nfft-1)*self.meas_obj.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
         
     def reset_freq_resolution(self, freq_init = 100, freq_end = 4000, delta_freq = 5):
