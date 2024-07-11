@@ -43,7 +43,7 @@ class NIMeasurement(object):
         sampling rate of the measurement signals
     """
     
-    def __init__(self, reference_sweep = None, fs = 51200):
+    def __init__(self, reference_sweep = None, fs = 51200, buffer_size = None):
         """
 
         Parameters
@@ -52,6 +52,9 @@ class NIMeasurement(object):
             reference sweep to be executed
         fs : int
             sampling rate
+        buffer_size : int or None
+            The size of your buffer on playback. It should be a power of 2 (since your playback
+            signal has size of a power of 2. This means that a integer number of blocks are played-back)
         
         """
         # folder checking
@@ -65,6 +68,13 @@ class NIMeasurement(object):
               method = 'logarithmic', windowing='hann')
         else:
             self.xt = reference_sweep
+        
+        if buffer_size is None:
+            self.buffer_size = 2**10
+        elif np.log2(buffer_size).is_integer():
+            self.buffer_size = buffer_size
+        else:
+            self.buffer_size = int(2**np.floor(np.log2(buffer_size)))
         
     def get_system_and_channels(self,):
         """ Get the system info and channels list
@@ -135,17 +145,15 @@ class NIMeasurement(object):
         self.sensor_sens = sensor_sens
         self.sensor_current = sensor_current
         
-    def play(self,):
+    def play(self, ):
         """ Play signal through amplifier - just to listen
 
         Parameters
         ----------
         """
         Coupling.AC
-        with nidaqmx.Task() as write_task:
-            # print(write_task)
-            # Create Voltage channel to play
-            # print("{},{},{}".format(self.out_channel_to_amp_name, self.ao_range, -self.ao_range))
+        with nidaqmx.Task() as write_task, nidaqmx.Task() as read_task:
+            # write the out channel (voltage channel)
             write_task.ao_channels.add_ao_voltage_chan(
                 self.out_channel_to_amp_name,
                 max_val=self.ao_range,
@@ -157,16 +165,97 @@ class NIMeasurement(object):
             write_task.timing.cfg_samp_clk_timing(
                 rate = self.xt.samplingRate,
                 sample_mode=AcquisitionType.CONTINUOUS)
-            # Write the signal
-            write_task.write(self.xt.timeSignal[:,0])
-            # commit
-            write_task.control(TaskMode.TASK_COMMIT)
-            # start, stop, close
-            write_task.start()
-            write_task.stop()
-            # write_task.close()
             
-    def play_rec(self, buffer_size = 2**12):
+            # You need to write a read task to play the signal (reason - unknown)
+            read_task.ai_channels.add_ai_voltage_chan(
+                self.in_channel_ref_name,
+                max_val=self.ai_range,
+                min_val=-self.ai_range)
+            # timing of input
+            read_task.timing.cfg_samp_clk_timing(
+                rate = self.xt.samplingRate,
+                sample_mode = AcquisitionType.CONTINUOUS)
+            
+            # Write the signal on the output channel
+            write_task.write(self.xt.timeSignal[:,0])
+            # commit the tasks
+            write_task.control(TaskMode.TASK_COMMIT)
+            read_task.control(TaskMode.TASK_COMMIT)
+            # start the tasks
+            write_task.start()
+            read_task.start()
+            # write_task.stop()
+            # write_task.close()
+            # Main loop
+            number_of_blocks = int(len(self.xt.timeSignal[:,0])/self.buffer_size)
+            # while timeCounter < number_of_blocks:
+            print('Playing signal (Reading nothing)')
+            for iblock in range(number_of_blocks):
+                _ = read_task.read(
+                    number_of_samples_per_channel = self.buffer_size)
+                
+    def rec(self, ):
+        """ rec signals
+
+        Parameters
+        ----------
+        """
+        Coupling.AC
+
+        with nidaqmx.Task() as read_task:
+            # Write the input channels
+            # sensor read channels
+            # sensor read channels
+            for channel_name in self.in_channel_sensor_names:
+                read_task.ai_channels.add_ai_microphone_chan(
+                    channel_name, 
+                    units = SoundPressureUnits.PA, 
+                    mic_sensitivity = self.sensor_sens,
+                    current_excit_val = self.sensor_current)
+            
+            # timing of input
+            read_task.timing.cfg_samp_clk_timing(
+                rate = self.xt.samplingRate,
+                sample_mode = AcquisitionType.CONTINUOUS)
+            
+            # commit the tasks
+            # write_task.control(TaskMode.TASK_COMMIT)
+            read_task.control(TaskMode.TASK_COMMIT)
+            
+            # start the read task
+            read_task.start()
+            # Starting the data acquisition
+            # Initialization
+            index_counter = 0
+            values_read = np.zeros((len(self.in_channel_sensor_names), len(self.xt.timeSignal[:,0])))      
+  
+            # Main loop (we read blocks of the signal of self.buffer_size samples)
+            number_of_blocks = int(len(self.xt.timeSignal[:,0])/self.buffer_size)
+            print('Recording sound in the environment')
+            for iblock in range(number_of_blocks):
+                # Read the current block
+                current_buffer_raw = read_task.read(
+                    number_of_samples_per_channel = self.buffer_size)
+                # Store data in a numpy array: size - n_in_channels x len(xt)
+                values_read[:, index_counter:index_counter+self.buffer_size] = \
+                    current_buffer_raw
+                # update index
+                index_counter += self.buffer_size
+            
+            # Pass read data to pytta signal objects  
+            sensor_obj_list = []
+            for channel_num in range(len(self.in_channel_sensor_names)):
+                sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num,:], 
+                    domain='time', freqMin = self.xt.freqMin, 
+                    freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
+                sensor_obj_list.append(sensor_obj)
+            
+            # Estimate dBFS of In and out
+            dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            print('Acqusition ended: Max_Out_Val = {} dBFS'.format(dBFS_mic))
+            return sensor_obj_list
+                
+    def play_rec(self, ):
         """ Play-rec signals
 
         Parameters
@@ -175,95 +264,91 @@ class NIMeasurement(object):
         Coupling.AC
 
         with nidaqmx.Task() as write_task, nidaqmx.Task() as read_task:
-            # Write the output channels
-            # To ref
+            # write the out channels (voltage channel) - on play-rec you will need 2
+            # One goes to the reference input channel of NI, the other to amp
+            # To NI
             write_task.ao_channels.add_ao_voltage_chan(
                 self.out_channel_to_ni_name,
                 max_val=self.ao_range,
                 min_val=-self.ao_range)
-            
             # To amp
             write_task.ao_channels.add_ao_voltage_chan(
                 self.out_channel_to_amp_name,
                 max_val=self.ao_range,
                 min_val=-self.ao_range)
+            # Regeneration mode
+            write_task.out_stream.regen_mode = \
+                nidaqmx.constants.RegenerationMode.DONT_ALLOW_REGENERATION
+            # timing of output
+            write_task.timing.cfg_samp_clk_timing(
+                rate = self.xt.samplingRate,
+                sample_mode = AcquisitionType.CONTINUOUS)
             
             # Write the input channels
-            # ref read channel
+            # 1 ref read channel
             read_task.ai_channels.add_ai_voltage_chan(
                 self.in_channel_ref_name,
                 max_val=self.ai_range,
                 min_val=-self.ai_range)
             
-            # sensor read channel
-            read_task.ai_channels.add_ai_microphone_chan(
-                self.in_channel_sensor_names[0], 
-                units = SoundPressureUnits.PA, 
-                mic_sensitivity = self.sensor_sens,
-                current_excit_val = self.sensor_current)
+            # sensor read channels
+            for channel_name in self.in_channel_sensor_names:
+                read_task.ai_channels.add_ai_microphone_chan(
+                    channel_name, 
+                    units = SoundPressureUnits.PA, 
+                    mic_sensitivity = self.sensor_sens,
+                    current_excit_val = self.sensor_current)
             
+            # timing of input
             read_task.timing.cfg_samp_clk_timing(
                 rate = self.xt.samplingRate,
                 sample_mode = AcquisitionType.CONTINUOUS)
-    
-            
-            write_task.out_stream.regen_mode = \
-                nidaqmx.constants.RegenerationMode.DONT_ALLOW_REGENERATION
-            write_task.timing.cfg_samp_clk_timing(
-                rate = self.xt.samplingRate,
-                sample_mode = AcquisitionType.CONTINUOUS)
-            
-            # write_task.write(self.xt.timeSignal[:,0])
+                
+            # Write the signal on the output channels - now you have two outs
             write_task.write(np.tile(self.xt.timeSignal[:,0], (2,1)))
-            # write_task.write([self.xt.timeSignal[:,0], self.xt.timeSignal[:,0]])
-
-            # if idx_ao:
-            write_task.control(TaskMode.TASK_COMMIT)
-            # if idx_ai:
-            read_task.control(TaskMode.TASK_COMMIT)
-            # if idx_ao:
-            write_task.start()
-            # if idx_ai:
-            read_task.start()
-    
-            # Starting the data acquisition/reproduction
-    
-            # Initialization
-            time_counter = 0
-            # blockidx = 0
-            values_read = np.zeros((2, len(self.xt.timeSignal[:,0])))
+            # write_task.write(self.xt.timeSignal[:,0])
             
-            # current_buffer = np.zeros((1, int(buffer_size)))
-            # previous_buffer = np.zeros((1, int(buffer_size)))
+            # commit the tasks
+            write_task.control(TaskMode.TASK_COMMIT)
+            read_task.control(TaskMode.TASK_COMMIT)
+            
+            # start the tasks
+            write_task.start()
+            read_task.start()
+            # Starting the data acquisition/reproduction
+            # Initialization
+            index_counter = 0
+            values_read = np.zeros((len(self.in_channel_sensor_names)+1, len(self.xt.timeSignal[:,0])))      
   
-            # Main loop
-            # if idx_ai:
-            number_of_blocks = int(len(self.xt.timeSignal[:,0])/buffer_size)
-            # pbar_ai = tqdm(total = number_of_blocks, desc = 'Acquiring signals')
-            # while timeCounter < number_of_blocks:
+            # Main loop (we read blocks of the signal of self.buffer_size samples)
+            number_of_blocks = int(len(self.xt.timeSignal[:,0])/self.buffer_size)
             print('Acqusition started')
             for iblock in range(number_of_blocks):
-                # The current read buffer - a list variable
+                # Read the current block
                 current_buffer_raw = read_task.read(
-                    number_of_samples_per_channel = buffer_size)
-                # print(type(current_buffer_raw[0][0]))
-                # This is the variable that stores the data for saving
-                values_read[:, time_counter:time_counter+buffer_size] = \
-                    current_buffer_raw 
-                
-                time_counter += buffer_size
-            # Estimate dBFS
-            dBFS = round(20*np.log10((np.amax(np.abs(values_read)*(self.sensor_sens/1000)))/self.ai_range), 2)
-            print('Acqusition ended: {} dBFS'.format(dBFS))
-            # Pass to pytta
-            ref_obj = pytta.classes.SignalObj(signalArray = values_read[1,:], 
+                    number_of_samples_per_channel = self.buffer_size)
+                # Store data in a numpy array: size - n_in_channels x len(xt)
+                values_read[:, index_counter:index_counter+self.buffer_size] = \
+                    current_buffer_raw
+                # update index
+                index_counter += self.buffer_size
+            
+            # Pass read data to pytta signal objects
+            ref_obj = pytta.classes.SignalObj(signalArray = values_read[0,:], 
                 domain='time', freqMin = self.xt.freqMin, 
                 freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
             
-            sensor_obj = pytta.classes.SignalObj(signalArray = values_read[0,:], 
-                domain='time', freqMin = self.xt.freqMin, 
-                freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
-            return sensor_obj, ref_obj
+            sensor_obj_list = []
+            for channel_num in range(len(self.in_channel_sensor_names)):
+                sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num + 1,:], 
+                    domain='time', freqMin = self.xt.freqMin, 
+                    freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
+                sensor_obj_list.append(sensor_obj)
+            # Estimate dBFS of In and out
+            dBFS_ref = round(20*np.log10(np.amax(np.abs(ref_obj.timeSignal))/self.ai_range), 2)
+            dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            print('Acqusition ended: Max_In_Val = {} dBFS, Max_Out_Val = {} dBFS'.format(dBFS_ref, dBFS_mic))
+            return ref_obj, sensor_obj_list
 
         
         
