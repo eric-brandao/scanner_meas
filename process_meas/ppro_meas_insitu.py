@@ -82,19 +82,19 @@ class InsituMeasurementPostPro():
             
         return yt_list
     
-    def ir(self, yt, regularization = True):
-        """ Computes the impulse response of a given output
+    # def ir(self, yt, regularization = True):
+    #     """ Computes the impulse response of a given output
         
-        Parameters
-        ----------
-        yt : pytta object
-            output signal
-        """
-        ht = pytta.ImpulsiveResponse(excitation = self.meas_obj.xt, 
-             recording = yt, samplingRate = self.meas_obj.xt.samplingRate, regularization = regularization,
-             method = 'linear')
+    #     Parameters
+    #     ----------
+    #     yt : pytta object
+    #         output signal
+    #     """
+    #     ht = pytta.ImpulsiveResponse(excitation = self.meas_obj.xt, 
+    #          recording = yt, samplingRate = self.meas_obj.xt.samplingRate, regularization = regularization,
+    #          method = 'linear')
         
-        return ht
+    #     return ht
     
     def mean_ir(self, ht_rep_list, only_linear_part = True):
         """Computes mean IR as in Pytta"""
@@ -134,8 +134,8 @@ class InsituMeasurementPostPro():
         bar.close()
         return ht_list
     
-    def compute_all_ir_load(self, regularization = True, 
-                       only_linear_part = True, bar_leave = True):
+    def compute_all_ir_load(self, regularization = True,  deconv_with_rec = True, 
+                       only_linear_part = True):
         
        """Compute all Impulse responses while loading measurement files. Saves memory
        """
@@ -155,7 +155,8 @@ class InsituMeasurementPostPro():
                yt = med_dict[keyslist[0]]               
                
                # Compute ht
-               ht = self.ir(yt, regularization = regularization)
+               ht = self.meas_obj.ir(yt, regularization = regularization,
+                                     deconv_with_rec =  deconv_with_rec)
                ht_rep_list.append(ht.IR)
            # take mean IR
            ht_mean_pytta = self.mean_ir(ht_rep_list, only_linear_part = only_linear_part)
@@ -297,13 +298,15 @@ class InsituMeasurementPostPro():
         bh_fadeout = bh_fadeout[int(len(bh_fadeout)/2):]
         
         # Adrienne win during fade in
-        self.adrienne_win[int((tstart-dt_fadein)*self.meas_obj.fs):int((tstart-dt_fadein)*self.meas_obj.fs)+len(bh_fadein)] = bh_fadein
+        start_sample = int((np.abs(tstart-dt_fadein))*self.meas_obj.fs)
+        self.adrienne_win[start_sample:start_sample+len(bh_fadein)] = bh_fadein
         
         # Adrienne win cte
-        self.adrienne_win[int((tstart-dt_fadein)*self.meas_obj.fs)+len(bh_fadein):int(t_cutoff*self.meas_obj.fs)] = 1
+        stop_sample = int(t_cutoff*self.meas_obj.fs)
+        self.adrienne_win[start_sample+len(bh_fadein):stop_sample] = 1
         
         # Adrienne win during fade out
-        self.adrienne_win[int(t_cutoff*self.meas_obj.fs):int((t_cutoff)*self.meas_obj.fs)+len(bh_fadeout)] = bh_fadeout
+        self.adrienne_win[stop_sample:stop_sample+len(bh_fadeout)] = bh_fadeout
         
         #plt.plot(adrienne_win)
         return self.adrienne_win
@@ -396,6 +399,7 @@ class InsituMeasurementPostPro():
         plt.figure()
         plt.plot(self.time_ht, ht , '-k', label = 'raw', linewidth = 2)
         plt.plot(self.time_ht, htw, '-r', label = 'windowed', alpha = 0.7)
+        plt.plot(self.time_ht, self.adrienne_win, '--b', label = 'window', alpha = 0.7)
         plt.grid()
         plt.legend()
         plt.xlim(xlims)

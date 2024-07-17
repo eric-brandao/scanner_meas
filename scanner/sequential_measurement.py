@@ -238,15 +238,15 @@ class ScannerMeasurement():
         else:
             print("The measurement files you seek do not exist in the folder you specified")
 
-    def ni_set_config_dicts(self, input_dict = dict(terminal = 'cDAQ1Mod1/ai0', 
-             mic_sens = 51.4, current_exc_sensor = 0.0022,
-             max_min_val = [-5, 5]),
-             output_dict = dict(terminal = 'cDAQ1Mod3/ao0', 
-             max_min_val =  [-10,10])):
-        """ sets NI configuration dictionaries
-        """
-        self.input_dict = input_dict
-        self.output_dict = output_dict     
+    # def ni_set_config_dicts(self, input_dict = dict(terminal = 'cDAQ1Mod1/ai0', 
+    #          mic_sens = 51.4, current_exc_sensor = 0.0022,
+    #          max_min_val = [-5, 5]),
+    #          output_dict = dict(terminal = 'cDAQ1Mod3/ao0', 
+    #          max_min_val =  [-10,10])):
+    #     """ sets NI configuration dictionaries
+    #     """
+    #     self.input_dict = input_dict
+    #     self.output_dict = output_dict     
 
     def pytta_list_devices(self,):
         """ Liste pytta devices for choice
@@ -315,130 +315,133 @@ class ScannerMeasurement():
             complete_path = self.main_folder / self.name / 'measured_signals'
             pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
     
-    def ni_set_play_rec_tasks(self, ):
+    # def ni_set_play_rec_tasks(self, ):
         
-        self.rn = np.random.randint(0, high = 1000)        
-        # if hasattr(self, 'input_task'):
-        #     self.input_task.close()
-        #     del(self.input_task)
+    #     self.rn = np.random.randint(0, high = 1000)        
+    #     # if hasattr(self, 'input_task'):
+    #     #     self.input_task.close()
+    #     #     del(self.input_task)
         
-        self.ni_get_input_task(input_type = 'mic')
+    #     self.ni_get_input_task(input_type = 'mic')
         
-        # if hasattr(self, 'output_task'):
-        #     self.output_task.close()
-        #     del(self.output_task)
+    #     # if hasattr(self, 'output_task'):
+    #     #     self.output_task.close()
+    #     #     del(self.output_task)
             
-        self.ni_get_output_task()
+    #     self.ni_get_output_task()
         
     
-    def ni_get_input_task(self, input_type = 'mic'):
-        """ Get input task for NI
+    # def ni_get_input_task(self, input_type = 'mic'):
+    #     """ Get input task for NI
         
-        Parameters
-        ----------
-        input_type : str
-            string with type of recording. Can be either 'mic' for microphone
-            or 'voltage' to configure by pass measurement. Default or any str sets
-            to 'mic'
-        """
-        #input_unit = SoundPressureUnits.PA
-        # Max of sound card for dBFS
-        Coupling.AC
-        self.max_val_dbFS = self.input_dict['max_min_val'][1]
-        # Instantiate NI object
-        self.input_task = nidaqmx.Task(new_task_name = 'intask' + str(self.rn))
-        # Configure input signal
-        if input_type == 'mic':
-            self.input_task.ai_channels.add_ai_microphone_chan(
-                self.input_dict['terminal'], 
-                units = SoundPressureUnits.PA, 
-                mic_sensitivity = self.input_dict['mic_sens'],
-                current_excit_val = self.input_dict['current_exc_sensor'])
-        elif input_type == 'voltage':
-            self.input_task.ai_channels.add_ai_voltage_chan(
-                self.input_dict['terminal'],
-                min_val = self.input_dict['max_min_val'][0], 
-                max_val = self.input_dict['max_min_val'][1],
-                units = VoltageUnits.VOLTS)
-        else:
-            self.input_task.ai_channels.add_ai_microphone_chan(
-                self.input_dict['terminal'], 
-                units = SoundPressureUnits.PA, 
-                mic_sensitivity = self.input_dict['mic_sens'],
-                current_excit_val = self.input_dict['current_exc_sensor'])
+    #     Parameters
+    #     ----------
+    #     input_type : str
+    #         string with type of recording. Can be either 'mic' for microphone
+    #         or 'voltage' to configure by pass measurement. Default or any str sets
+    #         to 'mic'
+    #     """
+    #     #input_unit = SoundPressureUnits.PA
+    #     # Max of sound card for dBFS
+    #     Coupling.AC
+    #     self.max_val_dbFS = self.input_dict['max_min_val'][1]
+    #     # Instantiate NI object
+    #     self.input_task = nidaqmx.Task(new_task_name = 'intask' + str(self.rn))
+    #     # Configure input signal
+    #     if input_type == 'mic':
+    #         self.input_task.ai_channels.add_ai_microphone_chan(
+    #             self.input_dict['terminal'], 
+    #             units = SoundPressureUnits.PA, 
+    #             mic_sensitivity = self.input_dict['mic_sens'],
+    #             current_excit_val = self.input_dict['current_exc_sensor'])
+    #     elif input_type == 'voltage':
+    #         self.input_task.ai_channels.add_ai_voltage_chan(
+    #             self.input_dict['terminal'],
+    #             min_val = self.input_dict['max_min_val'][0], 
+    #             max_val = self.input_dict['max_min_val'][1],
+    #             units = VoltageUnits.VOLTS)
+    #     else:
+    #         self.input_task.ai_channels.add_ai_microphone_chan(
+    #             self.input_dict['terminal'], 
+    #             units = SoundPressureUnits.PA, 
+    #             mic_sensitivity = self.input_dict['mic_sens'],
+    #             current_excit_val = self.input_dict['current_exc_sensor'])
             
-        self.input_task.timing.cfg_samp_clk_timing(self.fs,
-            sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE, 
-            samps_per_chan = self.Nsamples)#self.Nsamples
+    #     self.input_task.timing.cfg_samp_clk_timing(self.fs,
+    #         sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE, 
+    #         samps_per_chan = self.Nsamples)#self.Nsamples
             
-        # return input_task
+    #     # return input_task
     
-    def ni_get_output_task(self, ):
-        """ Get output task for NI
-        """
-        Coupling.AC
-        self.output_task = nidaqmx.Task(new_task_name = 'outtask' + str(self.rn))
+    # def ni_get_output_task(self, ):
+    #     """ Get output task for NI
+    #     """
+    #     Coupling.AC
+    #     self.output_task = nidaqmx.Task(new_task_name = 'outtask' + str(self.rn))
         
-        self.output_task.ao_channels.add_ao_voltage_chan(
-            self.output_dict['terminal'],
-            min_val = self.output_dict['max_min_val'][0], 
-            max_val = self.output_dict['max_min_val'][1],
-            units = VoltageUnits.VOLTS)
+    #     self.output_task.ao_channels.add_ao_voltage_chan(
+    #         self.output_dict['terminal'],
+    #         min_val = self.output_dict['max_min_val'][0], 
+    #         max_val = self.output_dict['max_min_val'][1],
+    #         units = VoltageUnits.VOLTS)
         
-        self.output_task.timing.cfg_samp_clk_timing(self.fs,
-            sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE,
-            samps_per_chan = self.Nsamples)
+    #     self.output_task.timing.cfg_samp_clk_timing(self.fs,
+    #         sample_mode = AcquisitionType.CONTINUOUS, #AcquisitionType.FINITE,
+    #         samps_per_chan = self.Nsamples)
         
-        self.output_task.out_stream.regen_mode = RegenerationMode.DONT_ALLOW_REGENERATION #RegenerationMode.ALLOW_REGENERATION
+    #     self.output_task.out_stream.regen_mode = RegenerationMode.DONT_ALLOW_REGENERATION #RegenerationMode.ALLOW_REGENERATION
         
-        self.output_task.write(self.xt.timeSignal[:,0])
-        # print(a)
-        self.output_task.triggers.start_trigger.cfg_dig_edge_start_trig('/cDAQ1/ai/StartTrigger')
+    #     self.output_task.write(self.xt.timeSignal[:,0])
+    #     # print(a)
+    #     self.output_task.triggers.start_trigger.cfg_dig_edge_start_trig('/cDAQ1/ai/StartTrigger')
         
-        # return output_task
+    #     # return output_task
     
-    def ni_play_rec(self,):
-        """Measure response signal using NI
+    # def ni_play_rec(self,):
+    #     """Measure response signal using NI
         
-        Returns
-        ----------
-        yt_rec_obj : pytta object
-            output signal
-        """
-        self.ni_set_play_rec_tasks()
-        # Coupling.AC
-        # Initialize for measurement
-        print('Acqusition started')
-        self.output_task.start()
-        self.input_task.start()
-        # Measure
-        master_data = self.input_task.read(
-            number_of_samples_per_channel = self.Nsamples,
-            timeout = 2*round(self.Nsamples/self.fs, 2))
-        # Stop measuring
-        self.input_task.stop()
-        self.input_task.close()
-        self.output_task.stop()
-        self.output_task.close()
-        # Get list as array
-        yt_rec = np.asarray(master_data)
-        # Print message
-        dBFS = round(20*np.log10(np.amax(np.abs(yt_rec))/self.max_val_dbFS), 2)
-        print('Acqusition ended: {} dBFS'.format(dBFS))
-        # Pass to pytta
-        yt_rec_obj = pytta.classes.SignalObj(
-            signalArray = yt_rec, 
-            domain='time', freqMin = self.freq_min, 
-            freqMax = self.freq_max, samplingRate = self.fs)
+    #     Returns
+    #     ----------
+    #     yt_rec_obj : pytta object
+    #         output signal
+    #     """
+    #     self.ni_set_play_rec_tasks()
+    #     # Coupling.AC
+    #     # Initialize for measurement
+    #     print('Acqusition started')
+    #     self.output_task.start()
+    #     self.input_task.start()
+    #     # Measure
+    #     master_data = self.input_task.read(
+    #         number_of_samples_per_channel = self.Nsamples,
+    #         timeout = 2*round(self.Nsamples/self.fs, 2))
+    #     # Stop measuring
+    #     self.input_task.stop()
+    #     self.input_task.close()
+    #     self.output_task.stop()
+    #     self.output_task.close()
+    #     # Get list as array
+    #     yt_rec = np.asarray(master_data)
+    #     # Print message
+    #     dBFS = round(20*np.log10(np.amax(np.abs(yt_rec))/self.max_val_dbFS), 2)
+    #     print('Acqusition ended: {} dBFS'.format(dBFS))
+    #     # Pass to pytta
+    #     yt_rec_obj = pytta.classes.SignalObj(
+    #         signalArray = yt_rec, 
+    #         domain='time', freqMin = self.freq_min, 
+    #         freqMax = self.freq_max, samplingRate = self.fs)
         
-        return yt_rec_obj
+    #     return yt_rec_obj
     
-    def pytta_play_rec_setup(self, in_channel = 1, out_channel = 1, 
+    def pytta_play_rec_setup(self, in_channel = [1, 2], out_channel = [1, 2],
+                             in_channel_ref = 2, in_channel_sensor = 1,
                              output_amplification = -3):
         """ Configure measurement of response signal using pytta and sound card
         """
         self.in_channel = in_channel
         self.out_channel = out_channel
+        self.in_channel_ref = in_channel_ref
+        self.in_channel_sensor = in_channel_sensor
         self.output_amplification = output_amplification
         
         self.pytta_meas = pytta.generate.measurement('playrec',
@@ -447,8 +450,8 @@ class ScannerMeasurement():
             freqMin = self.freq_min,
             freqMax = self.freq_max,
             device = self.device,
-            inChannels=[self.in_channel],
-            outChannels=[self.out_channel],
+            inChannels = self.in_channel,
+            outChannels = self.out_channel,
             outputAmplification = self.output_amplification)
 
     def pytta_play_rec(self,):
@@ -462,33 +465,48 @@ class ScannerMeasurement():
         print('Acqusition started')
         yt_rec_obj = self.pytta_meas.run()
         print('Acqusition ended')
-        return yt_rec_obj
+        return yt_rec_obj      
     
-    def pytta_measure_loopback(self,):
-        """ Measure system loopback of your sound card if you want
+    # def pytta_measure_loopback(self,):
+    #     """ Measure system loopback of your sound card if you want
         
-        Applicable to audio interfaces - should be flat inside the sweep range
-        """
-        print("I hope you are measuring your loopback IR")
-        yt_lb = self.pytta_play_rec()
-        ht_lb = self.ir(yt_lb, regularization = True)
-        ht_lb.IR.plot_freq(xLim = [20, 20000])
-        ht_lb.plot_time()
-        # saving loophack IR
-        complete_path = self.main_folder / self.name / 'impulse_responses'
-        pytta.save(str(complete_path / 'ht_lb.hdf5'), ht_lb.IR)
+    #     Applicable to audio interfaces - should be flat inside the sweep range
+    #     """
+    #     print("I hope you are measuring your loopback IR")
+    #     yt_lb = self.pytta_play_rec()
+    #     ht_lb = self.ir(yt_lb, regularization = True)
+    #     ht_lb.IR.plot_freq(xLim = [20, 20000])
+    #     ht_lb.plot_time()
+    #     # saving loophack IR
+    #     complete_path = self.main_folder / self.name / 'impulse_responses'
+    #     pytta.save(str(complete_path / 'ht_lb.hdf5'), ht_lb.IR)
     
-    def ir(self, yt, regularization = True):
+    def ir(self, yt, regularization = True, deconv_with_rec = True):
         """ Computes the impulse response of a given output
         
         Parameters
         ----------
         yt : pytta object
-            output signal
+            output measured signal(s). It can be made solely of the recorded signal,
+            if you did not measure the reference output; or it can be a 2 channel measurement
+            made of the mic (sensor) channel and the reference channel.
+        regularization : bool
+            Do you want noise in your h(t)? No, right - so leave it on. The False value is just
+            to show students what kinds of catatrophes can happen.
+        deconv_with_rec : bool
+            If True the reference signal is the recorded sweep. It is important to do that if you 
+            want to sync your IR. You cal set it to False. THen your reference signal is the 
+            mathematical sweep you designed (no garantee of sync).            
         """
-        ht = pytta.ImpulsiveResponse(excitation = self.xt, 
-             recording = yt, samplingRate = self.fs, regularization = regularization)
-        
+        yt_list = yt.split()
+        if deconv_with_rec:
+            ht = pytta.ImpulsiveResponse(excitation = yt_list[self.in_channel_ref-1], 
+                 recording = yt_list[self.in_channel_sensor-1], samplingRate = self.fs, 
+                 regularization = regularization)
+        else:
+            ht = pytta.ImpulsiveResponse(excitation = self.xt, 
+                 recording = yt_list[self.in_channel_sensor-1], 
+                 samplingRate = self.fs, regularization = regularization)
         return ht
 
         
@@ -834,15 +852,16 @@ class ScannerMeasurement():
         self.repetitions = repetitions
         #yt_list = []
         for jrec in range(self.receivers.coord.shape[0]):
-            print(f'\n Meas number {jrec+1} of {self.receivers.coord.shape[0]}')
             # Move the motor
-            self.move_motor_xyz(self.stand_array[jrec,:])
+            # self.move_motor_xyz(self.stand_array[jrec,:])
             # Take temperature and pressure
             ####
             # Take measurement and save it #ToDo
             
             # y_rep_list = []
             for jmeas in range(self.repetitions):
+                print('\n Receiver {} of {} (Repeat {} of {})'.format(
+                    jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
                 if meas_with_ni:
                     print("Solving sweep problems")
                 else: # measure with pytta
@@ -865,7 +884,7 @@ class ScannerMeasurement():
             self.temperature_list.append(self.temperature_current)
             self.humidity_list.append(self.humidity_current)
         # update control object
-        self.board.shutdown()
+        # self.board.shutdown()
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
         #return yt_list

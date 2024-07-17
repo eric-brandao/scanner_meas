@@ -27,20 +27,26 @@ xt = pytta.generate.sweep(freqMin = 100, freqMax = 10000, samplingRate = fs,
 
 #%% Ni measurement object
 
-ni_meas = NIMeasurement(reference_sweep=xt, fs = fs)
+ni_meas = NIMeasurement(reference_sweep=xt, fs = fs, buffer_size = 2**10)
 ni_meas.get_system_and_channels()
-ni_meas.set_output_channels(out_channel_to_ni = 0, out_channel_to_amp = 3, ao_range = 10)
+ni_meas.set_output_channels(out_channel_to_ni = 3, out_channel_to_amp = 0, ao_range = 10.0)
 ni_meas.set_input_channels(in_channel_ref = 0, in_channel_sensor = [1],
-                           ai_range = 1, sensor_sens = 45.1, sensor_current = 2.2e-3)
+                           ai_range = 1.0, sensor_sens = 50, sensor_current = 2.2e-3)
 
 #%%
-xt_ref, yt_mic = ni_meas.play_rec(buffer_size = 2**12)
+xt_ref, yt_mic = ni_meas.play_rec()
 
 #%%
-ht = pytta.ImpulsiveResponse(excitation = xt_ref, recording = yt_mic, samplingRate = ni_meas.xt.samplingRate,
+ht = pytta.ImpulsiveResponse(excitation = xt_ref, recording = yt_mic[0], samplingRate = ni_meas.xt.samplingRate,
                              regularization = True, method = 'linear')
 
-ht.IR.plot_time(xLim = (0, 0.001))
+ht.IR.plot_time()#xLim = (0, 0.001)
+
+#%%
+plt.figure()
+plt.plot(xt.timeVector, np.roll(xt.timeSignal, -1660))
+plt.plot(xt_ref.timeVector, xt_ref.timeSignal)
+
 # ni_meas.play()
 # name = 'testing_meas_ni'
 # main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash

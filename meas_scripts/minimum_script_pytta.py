@@ -17,7 +17,7 @@ main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash
 source = Source(coord = [0, 0, 1.0])
 #%%
 meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
-    fs = 44100, fft_degree = 18, start_stop_margin = [0.1, 1], 
+    fs = 44100, fft_degree = 18, start_stop_margin = [0.1, 0.5], 
     mic_sens = 51.4, x_pwm_pin = 2, x_digital_pin = 24,
     y_pwm_pin = 3, y_digital_pin = 26, z_pwm_pin = 4, z_digital_pin = 28,
     dht_pin = 40, pausing_time_array = [5, 8, 7], 
@@ -35,26 +35,30 @@ meas_obj.set_measurement_date()
 #%%
 meas_obj.pytta_list_devices()
 #%%
-meas_obj.pytta_set_device(device = 23)
+meas_obj.pytta_set_device(device = 13)
 meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
                        freq_max = 10000, n_zeros_pad = 0)
 
 #%%
-meas_obj.pytta_play_rec_setup(in_channel = 2, out_channel = 1, 
+meas_obj.pytta_play_rec_setup(in_channel = [1, 2], out_channel = [1, 2],
+                         in_channel_ref = 2, in_channel_sensor = 1,
                          output_amplification = -3)
 
 #%%
 yt = meas_obj.pytta_play_rec()
 
 #%%
-ht = pytta.ImpulsiveResponse(excitation = meas_obj.xt, recording = yt, samplingRate = meas_obj.xt.samplingRate,
+yt_xt_list = yt.split()
+ht = pytta.ImpulsiveResponse(excitation = yt_xt_list[meas_obj.in_channel_ref-1], 
+                             recording = yt_xt_list[meas_obj.in_channel_sensor-1], 
+                             samplingRate = meas_obj.xt.samplingRate,
                              regularization = True, method = 'linear')
 #%%
-ht = meas_obj.ir(yt, regularization=True)
-ht.IR.plot_time()
+ht = meas_obj.ir(yt, regularization=True, deconv_with_rec = True)
+ht.IR.plot_time(xLim = (0, 3e-3))
 ht.IR.plot_freq()
 #%%
-meas_obj.save()
+# meas_obj.save()
 
 #%%
 receiver_obj = Receiver(coord = [0,0,0.01])
@@ -67,11 +71,21 @@ meas_obj.set_receiver_array(receiver_obj, pt0 = pt0)
 
 
 #%%
+meas_obj.plot_scene(L_x = 0.6, L_y = 0.6, sample_thickness = 0.1,
+               baffle_size = 1.2, elev = 30, azim = 45)
 #%%
 meas_obj = ScannerMeasurement(main_folder = main_folder, name = name)
-
+meas_obj.load()
 #%%
 meas_obj.set_motors()
 #%%
 yt_list = meas_obj.sequential_measurement(meas_with_ni = False,
       repetitions = 2)
+
+#%% load one meas and check
+path = main_folder + '/' + name + '/measured_signals/' #+ '/rec0_m0.hdf5'
+
+med_dict = pytta.load(path + 'rec0_m0.hdf5')
+keyslist = list(med_dict.keys())
+yts = med_dict[keyslist[0]]
+yts.plot_freq(xLim = (20, 20000))

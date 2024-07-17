@@ -16,41 +16,45 @@ from ppro_meas_insitu import InsituMeasurementPostPro
 # name = 'Melamina_13_06_4_FonteProxima' #'PET_grooved_plate' # 'melamine' #
 # main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/MEAS_JoaoP_GNetto/13_06/'
 
-name = 'melamine_L60cm_d3cm_s100cm_2mics_01072024_3' #'PET_grooved_plate' # 'melamine' #
-main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'
+name = 'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
+main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
+
+# name = 'testing_meas'
+# main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash
 
 #%% Intantiate post processin object - it will load the meas_obj
 ppro_obj = InsituMeasurementPostPro(main_folder = main_folder, name = name,t_bypass=0)
 # source = Source([0, 0, 0.3])
 # ppro_obj.meas_obj.source = source
 #%% Compute all IR
-ppro_obj.compute_all_ir_load(regularization = True, only_linear_part = True)
+ppro_obj.compute_all_ir_load(regularization = True,  deconv_with_rec = True, 
+                   only_linear_part = True)
 
 #%% Load all IR 
 ppro_obj.load_irs()
 
 #%%
-idir = 1
-ppro_obj.move_ir(idir = idir, c0 = 340, source_coord = ppro_obj.meas_obj.source.coord, 
-                  receiver_coord = ppro_obj.meas_obj.receivers.coord[idir,:],
-                  plot_ir = True, xlims = (-0.1e-3, 2e-3))
+# idir = 1
+# ppro_obj.move_ir(idir = idir, c0 = 340, source_coord = ppro_obj.meas_obj.source.coord, 
+#                   receiver_coord = ppro_obj.meas_obj.receivers.coord[idir,:],
+#                   plot_ir = True, xlims = (-0.1e-3, 2e-3))
 
 # ppro_obj.move_all_ir(c0 = 340)
 
 #%% Plot - check for good health
-tlims = (0.002, 0.015)
+tlims = (0e-3, 8e-3)
 fig, ax = plt.subplots(1, figsize = (8,6), sharex = False)
 ppro_obj.plot_ir(ax, idir = 0, normalize = True, xlims = tlims, windowed = False)
 ppro_obj.plot_ir(ax, idir = 1, normalize = True, xlims = tlims, windowed = False)
 ax.grid()
 
 #%% Set the Adrienne window and apply it on IRs - plot the result
-# adrienne = ppro_obj.set_adrienne_win(tstart = 24e-3, dt_fadein = 1e-3, t_cutoff = 36e-3, dt_fadeout = 2e-3)
-adrienne = ppro_obj.set_adrienne_win(tstart = 2e-3, dt_fadein = 1e-3, t_cutoff = 13e-3, dt_fadeout = 2e-3)
+# adrienne = ppro_obj.set_adrienne_win(tstart = 20e-3, dt_fadein = 1e-3, t_cutoff = 27e-3, dt_fadeout = 2e-3)
+adrienne = ppro_obj.set_adrienne_win(tstart = 0, dt_fadein = 0, t_cutoff = 5e-3, dt_fadeout = 2e-3)
 ppro_obj.apply_window()
 
 rec_index = 1
-ppro_obj.ir_raw_vs_windowed(idir = rec_index, xlims = (2e-3, 15e-3))
+ppro_obj.ir_raw_vs_windowed(idir = rec_index, xlims = tlims)
 ppro_obj.frf_raw_vs_windowed(idir = rec_index, ylims = (-100, 0))
 
 #%% Reset frequency resolution
