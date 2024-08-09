@@ -28,6 +28,7 @@ import pytta
 # from pytta.generate import sweep
 # from pytta.classes import SignalObj, FRFMeasure
 # from pytta import ImpulsiveResponse, save, merge
+from ni_measurement import NIMeasurement
 
 # Arduino imports
 from telemetrix import telemetrix
@@ -102,7 +103,8 @@ class ScannerMeasurement():
             audio_interface = 'M-audio Fast Track Pro',
             amplifier = 'BK 2718',
             source_type = 'spherical speaker', source = None, 
-            start_new_measurement = True):
+            start_new_measurement = True,
+            sound_card_measurement = True):
         """
 
         Parameters
@@ -199,6 +201,7 @@ class ScannerMeasurement():
         # Instrumentation
         self.microphone_type = microphone_type
         self.audio_interface = audio_interface
+        self.sound_card_measurement = sound_card_measurement
         self.amplifier = amplifier
         self.source_type = source_type
         self.source = source
@@ -315,6 +318,46 @@ class ScannerMeasurement():
             complete_path = self.main_folder / self.name / 'measured_signals'
             pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
     
+    def ni_initializer(self, buffer_size = 2**8):
+        """ Initialize NI for measurement
+        """
+        self.buffer_size = buffer_size
+        self.ni_control_obj = NIMeasurement(reference_sweep = self.xt, 
+                                            fs = self.xt.samplingRate, buffer_size = buffer_size)
+        self.ni_control_obj.get_system_and_channels()
+
+    
+    def ni_set_output_channels(self, out_channel_to_ni = 3, out_channel_to_amp = 1, ao_range = 10.0):
+        """ Set NI output channels
+        """
+        self.out_channel_to_ni = out_channel_to_ni
+        self.out_channel_to_amp = out_channel_to_amp
+        self.ao_range = ao_range
+        self.ni_control_obj.set_output_channels(out_channel_to_ni = self.out_channel_to_ni, 
+                                    out_channel_to_amp = self.out_channel_to_amp, 
+                                    ao_range = self.ao_range)
+        
+
+    def ni_set_input_channels(self, in_channel_ref_onrec = 3, in_channel_sensor_onrec = [0],
+                               ai_range = 1, sensor_sens = 50, sensor_current = 2.2e-3):
+        """ Set NI output channels
+        """
+        self.in_channel_sensor = 2
+        self.in_channel_ref = 1
+        self.in_channel_ref_onrec = in_channel_ref_onrec
+        self.in_channel_sensor_onrec = in_channel_sensor_onrec
+        self.ai_range = ai_range
+        self.sensor_sens = sensor_sens
+        self.sensor_current = sensor_current
+        self.ni_control_obj.set_input_channels(in_channel_ref = self.in_channel_ref_onrec, 
+                                               in_channel_sensor = self.in_channel_sensor_onrec,
+                                               ai_range = self.ai_range, 
+                                               sensor_sens = self.sensor_sens, 
+                                               sensor_current = self.sensor_current)
+        # self.save()
+        # self.load()
+        
+        
     # def ni_set_play_rec_tasks(self, ):
         
     #     self.rn = np.random.randint(0, high = 1000)        
@@ -465,7 +508,19 @@ class ScannerMeasurement():
         print('Acqusition started')
         yt_rec_obj = self.pytta_meas.run()
         print('Acqusition ended')
-        return yt_rec_obj      
+        return yt_rec_obj
+    
+    def ni_play_rec(self,):
+        """ Measure response signal using pytta and NI
+        
+        Returns
+        ----------
+        yt_rec_obj : pytta object
+            output signal
+        """
+        yt_rec_obj = self.ni_control_obj.play_rec()
+        print('Acqusition ended')
+        return yt_rec_obj
     
     # def pytta_measure_loopback(self,):
     #     """ Measure system loopback of your sound card if you want
@@ -502,11 +557,12 @@ class ScannerMeasurement():
         if deconv_with_rec:
             ht = pytta.ImpulsiveResponse(excitation = yt_list[self.in_channel_ref-1], 
                  recording = yt_list[self.in_channel_sensor-1], samplingRate = self.fs, 
-                 regularization = regularization)
+                 regularization = regularization, freq_limits = [self.freq_min, self.freq_max])
         else:
             ht = pytta.ImpulsiveResponse(excitation = self.xt, 
                  recording = yt_list[self.in_channel_sensor-1], 
-                 samplingRate = self.fs, regularization = regularization)
+                 samplingRate = self.fs, regularization = regularization, 
+                 freq_limits = [self.freq_min, self.freq_max])
         return ht
 
         
@@ -853,7 +909,7 @@ class ScannerMeasurement():
         #yt_list = []
         for jrec in range(self.receivers.coord.shape[0]):
             # Move the motor
-            # self.move_motor_xyz(self.stand_array[jrec,:])
+            self.move_motor_xyz(self.stand_array[jrec,:])
             # Take temperature and pressure
             ####
             # Take measurement and save it #ToDo
@@ -863,7 +919,7 @@ class ScannerMeasurement():
                 print('\n Receiver {} of {} (Repeat {} of {})'.format(
                     jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
                 if meas_with_ni:
-                    print("Solving sweep problems")
+                    yt_obj = self.ni_play_rec()
                 else: # measure with pytta
                     yt_obj = self.pytta_play_rec()
                 
@@ -884,7 +940,7 @@ class ScannerMeasurement():
             self.temperature_list.append(self.temperature_current)
             self.humidity_list.append(self.humidity_current)
         # update control object
-        # self.board.shutdown()
+        self.board.shutdown()
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
         #return yt_list
@@ -942,6 +998,8 @@ class ScannerMeasurement():
             del temp_dict['pytta_meas']
         if hasattr(self, 'board'):
             del temp_dict['board']
+        if hasattr(self, 'ni_control_obj'):
+            del temp_dict['ni_control_obj']
         
         return temp_dict
     
@@ -977,8 +1035,20 @@ class ScannerMeasurement():
                     freq_min = self.freq_min, freq_max = self.freq_max,
                     n_zeros_pad = self.n_zeros_pad, save_xt = False)
         self.Nsamples = len(self.xt.timeSignal[:,0])
-        self.pytta_play_rec_setup(in_channel = self.in_channel, out_channel = self.out_channel, 
-                                  output_amplification = self.output_amplification)
+        if self.sound_card_measurement:
+            self.pytta_play_rec_setup(in_channel = self.in_channel, out_channel = self.out_channel, 
+                                      output_amplification = self.output_amplification)
+        else:
+            print('measured_signals')
+            self.ni_initializer(buffer_size = self.buffer_size)
+            self.ni_set_output_channels(out_channel_to_ni = self.out_channel_to_ni, 
+                                        out_channel_to_amp = self.out_channel_to_amp, 
+                                        ao_range = self.ao_range)
+            self.ni_set_input_channels(in_channel_ref_onrec = self.in_channel_ref_onrec, 
+                                    in_channel_sensor_onrec = self.in_channel_sensor_onrec,
+                                    ai_range = self.ai_range, 
+                                    sensor_sens = self.sensor_sens, 
+                                    sensor_current = self.sensor_current)
         self.__dict__.update(tmp_dict)
         
         

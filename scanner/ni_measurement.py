@@ -145,6 +145,17 @@ class NIMeasurement(object):
         self.sensor_sens = sensor_sens
         self.sensor_current = sensor_current
         
+    def initializer(self, ):
+        """ For some reason unkown to mankind, the very first recording with a mic is bad
+
+        I`ll do some dummy recording.
+        
+        Parameters
+        ----------
+        """
+        number_of_dummy_blocks = int(2**20/self.buffer_size)
+        self.rec(dummy_rec = True, number_of_dummy_blocks = number_of_dummy_blocks)
+        
     def play(self, ):
         """ Play signal through amplifier - just to listen
 
@@ -194,7 +205,7 @@ class NIMeasurement(object):
                 _ = read_task.read(
                     number_of_samples_per_channel = self.buffer_size)
                 
-    def rec(self, ):
+    def rec(self, dummy_rec = False, number_of_dummy_blocks = 2):
         """ rec signals
 
         Parameters
@@ -227,11 +238,19 @@ class NIMeasurement(object):
             # Starting the data acquisition
             # Initialization
             index_counter = 0
-            values_read = np.zeros((len(self.in_channel_sensor_names), len(self.xt.timeSignal[:,0])))      
+            # values_read = np.zeros((len(self.in_channel_sensor_names), len(self.xt.timeSignal[:,0])))      
   
             # Main loop (we read blocks of the signal of self.buffer_size samples)
-            number_of_blocks = int(len(self.xt.timeSignal[:,0])/self.buffer_size)
-            print('Recording sound in the environment')
+            if dummy_rec:
+                number_of_blocks = int(number_of_dummy_blocks)
+                values_read = np.zeros((len(self.in_channel_sensor_names), self.buffer_size*number_of_blocks))
+                print('Dummy recording - it is long, but necessary')
+            else:
+                number_of_blocks = int(len(self.xt.timeSignal[:,0])/self.buffer_size)
+                values_read = np.zeros((len(self.in_channel_sensor_names), len(self.xt.timeSignal[:,0])))
+                print('Recording sound in the environment')
+
+            
             for iblock in range(number_of_blocks):
                 # Read the current block
                 current_buffer_raw = read_task.read(
@@ -243,17 +262,24 @@ class NIMeasurement(object):
                 index_counter += self.buffer_size
             
             # Pass read data to pytta signal objects  
-            sensor_obj_list = []
-            for channel_num in range(len(self.in_channel_sensor_names)):
-                sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num,:], 
-                    domain='time', freqMin = self.xt.freqMin, 
-                    freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
-                sensor_obj_list.append(sensor_obj)
+            # sensor_obj_list = []
+            # for channel_num in range(len(self.in_channel_sensor_names)):
+            #     sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num,:], 
+            #         domain='time', freqMin = self.xt.freqMin, 
+            #         freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
+            #     sensor_obj_list.append(sensor_obj)
+                        
+            # # Estimate dBFS of In and out
+            # dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
             
+            meas_sig_obj = pytta.classes.SignalObj(signalArray = values_read, 
+                domain='time', freqMin = self.xt.freqMin, 
+                freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
             # Estimate dBFS of In and out
-            dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            dBFS_mic = round(20*np.log10(np.amax(np.abs(meas_sig_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            
             print('Acqusition ended: Max_Out_Val = {} dBFS'.format(dBFS_mic))
-            return sensor_obj_list
+            return meas_sig_obj
                 
     def play_rec(self, ):
         """ Play-rec signals
@@ -334,21 +360,29 @@ class NIMeasurement(object):
                 index_counter += self.buffer_size
             
             # Pass read data to pytta signal objects
-            ref_obj = pytta.classes.SignalObj(signalArray = values_read[0,:], 
+            # ref_obj = pytta.classes.SignalObj(signalArray = values_read[0,:], 
+            #     domain='time', freqMin = self.xt.freqMin, 
+            #     freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
+            
+            # sensor_obj_list = []
+            # for channel_num in range(len(self.in_channel_sensor_names)):
+            #     sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num + 1,:], 
+            #         domain='time', freqMin = self.xt.freqMin, 
+            #         freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
+            #     sensor_obj_list.append(sensor_obj)
+            # Estimate dBFS of In and out
+            # dBFS_ref = round(20*np.log10(np.amax(np.abs(ref_obj.timeSignal))/self.ai_range), 2)
+            # dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            # print('Acqusition ended: Max_In_Val = {} dBFS, Max_Out_Val = {} dBFS'.format(dBFS_ref, dBFS_mic))
+            
+            meas_sig_obj = pytta.classes.SignalObj(signalArray = values_read, 
                 domain='time', freqMin = self.xt.freqMin, 
                 freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
-            
-            sensor_obj_list = []
-            for channel_num in range(len(self.in_channel_sensor_names)):
-                sensor_obj = pytta.classes.SignalObj(signalArray = values_read[channel_num + 1,:], 
-                    domain='time', freqMin = self.xt.freqMin, 
-                    freqMax = self.xt.freqMax, samplingRate = self.xt.samplingRate)
-                sensor_obj_list.append(sensor_obj)
             # Estimate dBFS of In and out
-            dBFS_ref = round(20*np.log10(np.amax(np.abs(ref_obj.timeSignal))/self.ai_range), 2)
-            dBFS_mic = round(20*np.log10(np.amax(np.abs(sensor_obj.timeSignal*self.sensor_sens/1000))/self.ai_range), 2)
+            dBFS_ref = round(20*np.log10(np.amax(np.abs(meas_sig_obj.timeSignal[:,0]))/self.ai_range), 2)
+            dBFS_mic = round(20*np.log10(np.amax(np.abs(meas_sig_obj.timeSignal[:,1:]*self.sensor_sens/1000))/self.ai_range), 2)
             print('Acqusition ended: Max_In_Val = {} dBFS, Max_Out_Val = {} dBFS'.format(dBFS_ref, dBFS_mic))
-            return ref_obj, sensor_obj_list
+        return meas_sig_obj #ref_obj, sensor_obj_list
 
         
         
