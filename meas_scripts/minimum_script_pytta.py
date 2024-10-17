@@ -62,8 +62,8 @@ ht.IR.plot_freq()
 
 #%%
 receiver_obj = Receiver(coord = [0,0,0.01])
-receiver_obj.double_rec(z_dist = 0.02)
-#receiver_obj.double_planar_array(x_len=0.65,n_x=5,y_len=0.57,n_y=5, zr=0.015, dz=0.03)
+#receiver_obj.double_rec(z_dist = 0.02)
+receiver_obj.double_planar_array(x_len=0.65,n_x=11,y_len=0.57,n_y=10, zr=0.015, dz=0.03)
 
 pt0 = np.array([0.0, 0.0, 0.02]); "--> Coordinates where the michophone is"
 # This next method saves everything automaically.
