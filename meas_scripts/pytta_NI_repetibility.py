@@ -23,10 +23,10 @@ import time
 fs = 51200
 ni_rec = NIMeasurement(fs = 51200, buffer_size = 2**10, fft_degree = None, time_length = 3)
 
-ni_rec.set_sensor_properties(sensor_type = 'voltage', physical_channel_num = 0, sensitivity = 1, 
-                             ai_range = 2)
+# ni_rec.set_sensor_properties(sensor_type = 'voltage', physical_channel_num = 0, sensitivity = 1, 
+#                              ai_range = 2)
 
-ni_rec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 6,
+ni_rec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 2,
                           sensor_current = 4e-3, sensitivity = 54.8, ai_range = 130)
 
 rec_signal = ni_rec.rec()
@@ -36,9 +36,9 @@ rec_signal.plot_time();
 fs = 51200
 freq_min = 100
 freq_max = 10000
-fft_degree = 18
+fft_degree = 19
 start_margin = 0.1
-stop_margin = 0.5
+stop_margin = 1
 
 xt = pytta.generate.sweep(freqMin = freq_min,
   freqMax = freq_max, samplingRate = fs, fftDegree = fft_degree, startMargin = start_margin,
@@ -56,7 +56,7 @@ ni_playrec = NIMeasurement(fs = 51200, buffer_size = 2**10,
 ni_playrec.set_output_channels(physical_channel_nums = [1,2], ao_range = 10)
 ni_playrec.set_sensor_properties(sensor_type = 'voltage', physical_channel_num = 0, sensitivity = 1, 
                              ai_range = 2)
-ni_playrec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 3,
+ni_playrec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 2,
                           sensor_current = 4e-3, sensitivity = 54.8, ai_range = 130)
 
 rec_signals = ni_playrec.play_rec()

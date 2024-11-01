@@ -478,14 +478,16 @@ class ScannerMeasurement():
     
     def pytta_play_rec_setup(self, in_channel = [1, 2], out_channel = [1, 2],
                              in_channel_ref = 2, in_channel_sensor = 1,
-                             output_amplification = -3):
+                             output_amplification = -3,
+                             repetitions = 1):
         """ Configure measurement of response signal using pytta and sound card
         """
         self.in_channel = in_channel
         self.out_channel = out_channel
-        self.in_channel_ref = in_channel_ref
-        self.in_channel_sensor = in_channel_sensor
+        self.in_channel_ref = in_channel_ref # I'll leave it here for later (for now it is unused)
+        self.in_channel_sensor = in_channel_sensor # I'll leave it here for later (for now it is unused)
         self.output_amplification = output_amplification
+        self.repetitions = repetitions
         
         self.pytta_meas = pytta.generate.measurement('playrec',
             excitation = self.xt,
@@ -510,6 +512,24 @@ class ScannerMeasurement():
         print('Acqusition ended')
         return yt_rec_obj
     
+    def pytta_rec_noise(self,):
+        """ Measure the microphone signal in the enviroment
+        
+        For SNR estimations
+        
+        Returns
+        ----------
+        yt_rec_obj : pytta object
+            output signal
+        """
+        pytta_rec = pytta.generate.measurement('rec', samplingRate = self.fs, 
+               device = self.device, inChannels=[self.in_channel_sensor], 
+               fftDegree = self.fft_degree)
+        print('Acqusition started (Recording noise level)')
+        yt_rec_obj = pytta_rec.run()
+        print('Acqusition ended')
+        return yt_rec_obj
+    
     def ni_play_rec(self,):
         """ Measure response signal using pytta and NI
         
@@ -521,21 +541,7 @@ class ScannerMeasurement():
         yt_rec_obj = self.ni_control_obj.play_rec()
         print('Acqusition ended')
         return yt_rec_obj
-    
-    # def pytta_measure_loopback(self,):
-    #     """ Measure system loopback of your sound card if you want
-        
-    #     Applicable to audio interfaces - should be flat inside the sweep range
-    #     """
-    #     print("I hope you are measuring your loopback IR")
-    #     yt_lb = self.pytta_play_rec()
-    #     ht_lb = self.ir(yt_lb, regularization = True)
-    #     ht_lb.IR.plot_freq(xLim = [20, 20000])
-    #     ht_lb.plot_time()
-    #     # saving loophack IR
-    #     complete_path = self.main_folder / self.name / 'impulse_responses'
-    #     pytta.save(str(complete_path / 'ht_lb.hdf5'), ht_lb.IR)
-    
+       
     def ir(self, yt, regularization = True, deconv_with_rec = True):
         """ Computes the impulse response of a given output
         
@@ -555,12 +561,18 @@ class ScannerMeasurement():
         """
         yt_list = yt.split()
         if deconv_with_rec:
-            ht = pytta.ImpulsiveResponse(excitation = yt_list[self.in_channel_ref-1], 
-                 recording = yt_list[self.in_channel_sensor-1], samplingRate = self.fs, 
+            # ht = pytta.ImpulsiveResponse(excitation = yt_list[self.in_channel_ref-1], 
+            #      recording = yt_list[self.in_channel_sensor-1], samplingRate = self.fs, 
+            #      regularization = regularization, freq_limits = [self.freq_min, self.freq_max])
+            
+            # This new version is assuming that the mic signal is at the first channel and the reference
+            # is at the second channel
+            ht = pytta.ImpulsiveResponse(excitation = yt_list[1], 
+                 recording = yt_list[0], samplingRate = self.fs, 
                  regularization = regularization, freq_limits = [self.freq_min, self.freq_max])
         else:
             ht = pytta.ImpulsiveResponse(excitation = self.xt, 
-                 recording = yt_list[self.in_channel_sensor-1], 
+                 recording = yt_list[0], 
                  samplingRate = self.fs, regularization = regularization, 
                  freq_limits = [self.freq_min, self.freq_max])
         return ht
@@ -892,55 +904,73 @@ class ScannerMeasurement():
         self.board.shutdown()
         
     def sequential_measurement(self, meas_with_ni = False, 
-                               repetitions = 1,
-                               plot_frf = False):
+                               bypass_scanner = False,
+                               noise_at_each_nth = None):
         """ Move all motors sequentially through the array positions
         
         Parameters
         ----------
         meas_with_ni : bool
-            whether to measure wit NI or not. Default is True
-        repetitions : int
-            number of repeated measurements
-        plot_frf : bool
-            whether to plot the FRF or not
+            whether to measure wit NI or not. Default is False
+        bypass_scanner : bool
+            whether to bypass motor movement. We can use it to test measurement features.
+            Default is False (so that motors will move)
+        noise_at_each_nth : bool
+            If you want to record the noise level at each n-th measurement step
+            If this is None (default), the variable gets a number higher than the 
+            number of receivers, so that the noise level will never be recorded.
+            If the value is less than the number of receivers, than the noise level
+            will be recorded each time that the n-th receiver is being recorded
         """
-        self.repetitions = repetitions
-        #yt_list = []
+        # if noise_at_each_nth is None, set it to a value higher than the num of recs
+        if noise_at_each_nth is None:
+            noise_at_each_nth = int(10*self.receivers.coord.shape[0])
+        noise_counter = 1
+        
+        # Get starting time
+        self.start_timestamp = datetime.now()
         for jrec in range(self.receivers.coord.shape[0]):
             # Move the motor
-            self.move_motor_xyz(self.stand_array[jrec,:])
-            # Take temperature and pressure
-            ####
-            # Take measurement and save it #ToDo
-            
-            # y_rep_list = []
+            if not bypass_scanner:
+                self.move_motor_xyz(self.stand_array[jrec,:])
+            # Take measurement and save it            
             for jmeas in range(self.repetitions):
-                print('\n Receiver {} of {} (Repeat {} of {})'.format(
+                print('\n Playback and record at Receiver {} of {} (Repeat {} of {})'.format(
                     jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
                 if meas_with_ni:
                     yt_obj = self.ni_play_rec()
                 else: # measure with pytta
-                    yt_obj = self.pytta_play_rec()
-                
-                # if plot_frf:
-                #     self.plot_spk(yt_obj)
-                
-                #y_rep_list.append(yt_obj)
-                # ptta saving
+                    yt_obj = self.pytta_play_rec()               
+                # ptta saving the playrec measurement
                 filename = 'rec' + str(int(jrec)) +\
                     '_m' + str(int(jmeas)) + '.hdf5'
                 complete_path = self.main_folder / self.name / 'measured_signals'
                 pytta.save(str(complete_path / filename), yt_obj)
-                # plot FRF
+            # Noise measurement
+            # if noise_at_each_nth == int(noise_counter*jrec-1):
+            if jrec+1 == int(noise_counter*noise_at_each_nth):
+                print('\n Recording noise level at Receiver {} of {}'.format(jrec+1, 
+                     self.receivers.coord.shape[0]))
+                noise_obj = self.pytta_rec_noise()
+                # ptta saving the rec measurement
+                filename = 'noise' + str(int(jrec)) + '.hdf5'
+                complete_path = self.main_folder / self.name / 'measured_signals'
+                pytta.save(str(complete_path / filename), noise_obj)
+                noise_counter += 1 # increment counter for next noise measurement
                 
+            
             # append all to main list
             #yt_list.append(y_rep_list)
             # Take temperature and humidity
+            # Take temperature and pressure
+            #### To Do
             self.temperature_list.append(self.temperature_current)
             self.humidity_list.append(self.humidity_current)
         # update control object
-        self.board.shutdown()
+        if not bypass_scanner:
+            self.board.shutdown()
+        # Get ending time
+        self.stop_timestamp = datetime.now()
         self.save()        
         print('\n Measurement ended. I will shut down the board instance! \n')
         #return yt_list
