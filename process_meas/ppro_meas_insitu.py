@@ -196,6 +196,23 @@ class InsituMeasurementPostPro():
         self.time_ht = ht.timeVector.flatten()
         self.ht_length = len(self.time_ht)
         # print("ht matrix has {:.2f} MB".format(ht_mtx.nbytes/(1024*1024)))
+        
+    def load_irs2(self,):
+        """ Load all IRs to a matrix
+        """
+        # load 0 case
+        ht = self.load_ir_byindex(0)
+        
+        # initialize
+        self.ht_mtx = np.zeros((self.meas_obj.receivers.coord.shape[0], len(ht.IR.timeSignal)))
+        self.ht_mtx[0, :] = ht.IR.timeSignal.flatten()
+        # For each receiver compute repeated ht
+        for jrec in range(1, self.meas_obj.receivers.coord.shape[0]):
+            ht = self.load_ir_byindex(jrec)
+            self.ht_mtx[jrec, :] = ht.IR.timeSignal.flatten()
+        self.time_ht = ht.IR.timeVector.flatten()
+        self.ht_length = len(self.time_ht)
+        # print("ht matrix has {:.2f} MB".format(ht_mtx.nbytes/(1024*1024)))
     
     def move_ir(self, idir = 0, c0 = 340, 
                 source_coord = [0, 0, 1], receiver_coord = [0, 0, 0.01],
@@ -331,7 +348,8 @@ class InsituMeasurementPostPro():
         if (nfft % 2) == 0:
             self.nfft_half = int(nfft/2)
         else:
-            self.nfft_half = int((nfft+1)/2)           
+            self.nfft_half = int((nfft+1)/2)
+            
         self.freq_Hw = np.linspace(0, (nfft-1)*self.meas_obj.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
         
@@ -412,7 +430,7 @@ class InsituMeasurementPostPro():
         """
         # Number of curves per axis
         num_of_axis = figformat[0]*figformat[1]
-        num_of_cur_axis = int(self.receivers.coord.shape[0]/num_of_axis)
+        num_of_cur_axis = int(self.meas_obj.receivers.coord.shape[0]/num_of_axis)
         
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
                                sharex = True, sharey = True)

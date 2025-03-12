@@ -14,117 +14,70 @@ Created on Thu Oct 27 15:23:05 2022 - minimum measurement script
 import numpy as np
 import matplotlib.pyplot as plt
 from ni_measurement import NIMeasurement
-from sequential_measurement import ScannerMeasurement
-from receivers import Receiver
-from sources import Source
+
 import pytta
-#%% Generate a reference sweep
+import time
+
+#%% Just record input
+# Define NI's sampling rate
 fs = 51200
+# Set measurement object: inputs are: fs, buffer size (int), fft_degree or time_length [s]
+ni_rec = NIMeasurement(fs = fs, buffer_size = 2**10, fft_degree = None, time_length = 3)
+# You need to define a recording channel. Below is how you set a microphone
+ni_rec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 1,
+                             sensor_current = 4e-3, sensitivity = 49.8, ai_range = 130)
+# You can set multiple recording channels. Below is how you set a voltage channel.
+ni_rec.set_sensor_properties(sensor_type = 'voltage', physical_channel_num = 0, sensitivity = 1, 
+                             ai_range = 5)
+# The "rec()"  method will record your data and store it on a Pytta object.
+rec_signal = ni_rec.rec()
+rec_signal.plot_time();
 
-xt = pytta.generate.sweep(freqMin = 100, freqMax = 10000, samplingRate = fs,
-  fftDegree = 18, startMargin = 0.1, stopMargin = 0.5,
-  method = 'logarithmic', windowing='hann')
+#%% Generate a sweep to play and play it
+# Define NI's sampling rate
+fs = 51200
+# Sweep parameters
+freq_min = 100
+freq_max = 10000
+fft_degree = 18
+start_margin = 0.1
+stop_margin = 0.5
+# Pytta's sweep generation
+xt = pytta.generate.sweep(freqMin = freq_min,
+  freqMax = freq_max, samplingRate = fs, fftDegree = fft_degree, startMargin = start_margin,
+  stopMargin = stop_margin, method = 'logarithmic', windowing='hann')
 
-#%% Ni measurement object
+#%% play signal
+# We will play xt. Set measurement object: inputs are: fs, buffer size (int)
+ni_play = NIMeasurement(fs = 51200, buffer_size = 2**10, reference_signal = xt)
+# You need to define an output channel. Below is how you set a voltage output. "physical_channel_nums" is a list because you can play the same signal through multiple outputs.
+ni_play.set_output_channels(physical_channel_nums = [1], ao_range = 10)
+# play it
+ni_play.play()
 
-ni_meas = NIMeasurement(reference_sweep=xt, fs = fs, buffer_size = 2**10)
-ni_meas.get_system_and_channels()
-ni_meas.set_output_channels(out_channel_to_ni = 3, out_channel_to_amp = 0, ao_range = 10.0)
-ni_meas.set_input_channels(in_channel_ref = 0, in_channel_sensor = [1],
-                           ai_range = 1.0, sensor_sens = 50, sensor_current = 2.2e-3)
+#%% Play-rec mode
+# Define NI's sampling rate
+fs = 51200
+# Set measurement object: inputs are: fs, buffer size (int). The reference_signal defines the number of samples and time to be played
+ni_playrec = NIMeasurement(fs = fs, buffer_size = 2**10, reference_signal = xt)
 
-#%%
-xt_ref, yt_mic = ni_meas.play_rec()
+# You need to define an output channel. Below is how you set a voltage output. "physical_channel_nums" is a list because you can play the same signal through multiple outputs.
+ni_playrec.set_output_channels(physical_channel_nums = [1], ao_range = 10)
 
-#%%
-ht = pytta.ImpulsiveResponse(excitation = xt_ref, recording = yt_mic[0], samplingRate = ni_meas.xt.samplingRate,
-                             regularization = True, method = 'linear')
+# You can set multiple recording channels. Below is how you set a voltage channel in channel 0.
+ni_playrec.set_sensor_properties(sensor_type = 'voltage', physical_channel_num = 0, 
+                                 sensitivity = 1, ai_range = 5)
 
-ht.IR.plot_time()#xLim = (0, 0.001)
+# You need to define a recording channel. Below is how you set a microphone in channel 1
+ni_playrec.set_sensor_properties(sensor_type = 'microphone', physical_channel_num = 1,
+                          sensor_current = 4e-3, sensitivity = 49.8, ai_range = 130)
 
-#%%
-plt.figure()
-plt.plot(xt.timeVector, np.roll(xt.timeSignal, -1660))
-plt.plot(xt_ref.timeVector, xt_ref.timeSignal)
+# playback and record it. Recorded signals will be stored in a Pytta object
+rec_signals = ni_playrec.play_rec()
+rec_signals.plot_freq()
 
-# ni_meas.play()
-# name = 'testing_meas_ni'
-# main_folder = 'D:/Work/dev/scanner_meas/meas_scripts'# use forward slash
-# # arduino_dict = dict()
-# source = Source(coord = [0, 0, 1.0])
-# #%%
-# meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
-#     fs = 51200, fft_degree = 16, start_stop_margin = [0.1, 0.5], 
-#     mic_sens = 51.4, x_pwm_pin = 2, x_digital_pin = 24,
-#     y_pwm_pin = 3, y_digital_pin = 26, z_pwm_pin = 5, z_digital_pin = 28,
-#     dht_pin = 40, pausing_time_array = [5, 8, 7], 
-#     material = None, material_type = 'no sample',
-#     temperature = 20, humidity = 0.5,
-#     microphone_type = 'BK 4189',
-#     audio_interface = 'NI',
-#     amplifier = 'BK 2718',
-#     source_type = 'random open speaker', source = source,
-#     start_new_measurement = True)
-
-# #%%
-# meas_obj.set_measurement_date()
-
-# #%%
-# input_dict = dict(terminal = 'cDAQ1Mod3/ai1', mic_sens = 51.4, 
-#   current_exc_sensor = 0.0022, max_min_val = [-5, 5])
-# output_dict = dict(terminal = 'cDAQ1Mod4/ao3', max_min_val =  [-10,10])
-
-# meas_obj.ni_set_config_dicts(input_dict = input_dict, output_dict = output_dict)
-
-
-
-# #%%
-# # meas_obj.pytta_set_device(device = 23)
-# meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
-#                        freq_max = 10000, n_zeros_pad = 0)
-
-# #%%
-# yt_obj = meas_obj.ni_play_rec()
-
-# #%%
-# ht = meas_obj.ir(yt_obj, regularization=True)
-# ht.IR.plot_time(xLim = (0, 10e-3))
-# # ht.IR.plot_freq()
-
-# #%% Repetibility test
-# N_meas = 5
-
-# ht_list = []
-# for imeas in range(N_meas):
-#     yt_obj = meas_obj.ni_play_rec()
-#     ht = meas_obj.ir(yt_obj, regularization=True)
-#     ht_list.append(ht)
-    
-# #%% plot rep
-# plt.figure()
-# for imeas in range(N_meas):
-#     plt.plot(ht_list[imeas].IR.timeVector, ht_list[imeas].IR.timeSignal)
-# plt.xlim((0, 10e-3))
-
-# #%%
-# # meas_obj.save()
-
-# # #%%
-# # receiver_obj = Receiver(coord = [0,0,0.01])
-# # receiver_obj.double_rec(z_dist = 0.02)
-# # #receiver_obj.double_planar_array(x_len=0.65,n_x=5,y_len=0.57,n_y=5, zr=0.015, dz=0.03)
-
-# # pt0 = np.array([0.0, 0.0, 0.02]); "--> Coordinates where the michophone is"
-# # # This next method saves everything automaically.
-# # meas_obj.set_receiver_array(receiver_obj, pt0 = pt0)
-
-
-# # #%%
-# # #%%
-# # meas_obj = ScannerMeasurement(main_folder = main_folder, name = name)
-
-# # #%%
-# # meas_obj.set_motors()
-# # #%%
-# # yt_list = meas_obj.sequential_measurement(meas_with_ni = False,
-# #       repetitions = 2)
+#%% Compute Impulse Response    
+xtyt = rec_signals.split()
+ht = pytta.ImpulsiveResponse(excitation = xtyt[0], recording = xtyt[1], samplingRate = ni_playrec.fs, 
+                             regularization = True, freq_limits=[freq_min, freq_max])
+ht.IR.plot_time();

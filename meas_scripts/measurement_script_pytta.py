@@ -49,7 +49,6 @@ meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 250,
 
 #%% Do the pytta play-rec setup. Channel numbers is super important.
 meas_obj.pytta_play_rec_setup(in_channel = [1, 3], out_channel = [1, 2],
-                         in_channel_ref = 2, in_channel_sensor = 1,
                          output_amplification = -3,
                          repetitions = 1)
 
@@ -77,7 +76,7 @@ receiver_obj = Receiver(coord = [0,0,0.00])
 #receiver_obj.double_rec(z_dist = 0.02)
 #receiver_obj.double_planar_array(x_len=0.65,n_x=5,y_len=0.57,n_y=5, zr=0.015, dz=0.03)
 receiver_obj.random_3d_array(x_len = 0.3, y_len = 0.3, z_len = 0.1, zr = 0.02, n_total = 6, seed = 0)
-starting_coordinates= np.array([0.0, 0.0, 0.05]); "--> Coordinates where the michophone is"
+starting_coordinates= np.array([0.0, 0.0, 0.05]); #"--> Coordinates where the michophone is"
 
 # Setting up the array saves every config made to this point
 meas_obj.set_receiver_array(receiver_obj, pt0 = starting_coordinates)
