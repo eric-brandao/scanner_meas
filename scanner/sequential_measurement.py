@@ -20,7 +20,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 import scipy.io as io
-from scipy.signal import windows, resample, chirp
+from scipy.signal import windows, resample, chirp, correlate
 from datetime import datetime
 
 # Pytta imports
@@ -209,6 +209,19 @@ class ScannerMeasurement():
         # saving the control object        
         # self.save() # save initialization
     
+    def print_meas_data(self,):
+        """ print some data about the measurement
+        """
+        print(self.date_of_measurement.strftime('Measurement done at %d/%b/%Y'))
+        print("The number of receivers in the array: {}".format(self.receivers.coord.shape[0]))
+        print("The number of channels per measurement: {}".format(len(self.in_channel)))
+        print("The number of repetitions: {}".format(self.repetitions))
+        print("Total number of measurements: {}".format(self.receivers.coord.shape[0]*self.repetitions))
+        print("Source at: {}".format(self.source.coord))
+        print("Material type: {}".format(self.material_type))
+        print("Microphone type: {}".format(self.microphone_type))
+        print("Audio Interface: {}".format(self.audio_interface))
+    
     def set_measurement_date(self,):
         """ Use datetime to set the measurement date
         """
@@ -318,9 +331,19 @@ class ScannerMeasurement():
             complete_path = self.main_folder / self.name / 'measured_signals'
             pytta.save(str(complete_path / 'xt.hdf5'), self.xt)
     
-    def ni_initializer(self, buffer_size = 2**8):
+    def ni_initializer(self, buffer_size = 2**8, play_rec_type = 'NI play and rec'):
         """ Initialize NI for measurement
+        
+        Parameters
+        ----------
+        buffer_size : int
+            NI's buffer size
+        play_rec_type : str
+            Can either be 'NI play and rec' (if you want to play and rec with NI)
+            or it can be 'SC play and NI rec' (if you want to play with Sound card
+            and rec with NI)
         """
+        self.play_rec_type = play_rec_type
         self.buffer_size = buffer_size
         self.ni_control_obj = NIMeasurement(reference_sweep = self.xt, 
                                             fs = self.xt.samplingRate, buffer_size = buffer_size)
@@ -482,6 +505,7 @@ class ScannerMeasurement():
                              repetitions = 1):
         """ Configure measurement of response signal using pytta and sound card
         """
+        self.play_rec_type = 'SC play and rec'
         self.in_channel = in_channel
         self.out_channel = out_channel
         self.in_channel_ref = in_channel_ref # I'll leave it here for later (for now it is unused)
@@ -542,7 +566,8 @@ class ScannerMeasurement():
         print('Acqusition ended')
         return yt_rec_obj
        
-    def ir(self, yt, regularization = True, deconv_with_rec = True):
+    def ir(self, yt, regularization = True, deconv_with_rec = True,
+           lag_mat_sweep = True, freq_limits = None):
         """ Computes the impulse response of a given output
         
         Parameters
@@ -557,27 +582,144 @@ class ScannerMeasurement():
         deconv_with_rec : bool
             If True the reference signal is the recorded sweep. It is important to do that if you 
             want to sync your IR. You cal set it to False. THen your reference signal is the 
-            mathematical sweep you designed (no garantee of sync).            
+            mathematical sweep you designed (no garantee of sync).
+        lag_mat_sweep : bool
+            If True, the mathematical sweep will be lagged to match the start of the reference
+            recording prior to deconvolution
+        freq_limits : list or None
+            List of two values with desired regularization limits. 
+            If None (default) we use self.freq_min and self.freq_max as regularization
         """
+        if freq_limits is None:
+            freq_limits = [self.freq_min, self.freq_max]
+        elif len(freq_limits) != 2:
+            raise ValueError("freq_limits must be a list with two values")
+        
         yt_list = yt.split()
+        
         if deconv_with_rec:
-            # ht = pytta.ImpulsiveResponse(excitation = yt_list[self.in_channel_ref-1], 
-            #      recording = yt_list[self.in_channel_sensor-1], samplingRate = self.fs, 
-            #      regularization = regularization, freq_limits = [self.freq_min, self.freq_max])
-            
-            # This new version is assuming that the mic signal is at the first channel and the reference
-            # is at the second channel
-            ht = pytta.ImpulsiveResponse(excitation = yt_list[1], 
-                 recording = yt_list[0], samplingRate = self.fs, 
-                 regularization = regularization, freq_limits = [self.freq_min, self.freq_max])
+            # This new version is assuming that the mic signal is at the first channel 
+            # and the reference is at the second channel - ToDO - improve logic
+            ref_sig = yt_list[1] 
         else:
-            ht = pytta.ImpulsiveResponse(excitation = self.xt, 
-                 recording = yt_list[0], 
-                 samplingRate = self.fs, regularization = regularization, 
-                 freq_limits = [self.freq_min, self.freq_max])
+            if  lag_mat_sweep:
+                delay_sec, delay_samples = self.cross_corr_delay_id(yt = yt_list[1])
+                ref_sig = self.shift_xt(delay_samples = delay_samples)
+            else:
+                ref_sig = self.xt
+        
+        rec_sig = yt_list[0]
+        ht = pytta.ImpulsiveResponse(excitation = ref_sig, 
+             recording = rec_sig, samplingRate = self.fs, 
+             regularization = regularization, freq_limits = freq_limits)
+        
         return ht
 
+    def cross_corr_delay_id(self, yt):
+        """ Use cross correlation to ID latency between recordings
         
+        We have the reference channels and we can compare it to self.xt to ID
+        the latency of the particular recording
+        
+        Parameters
+        ----------
+        yt : pytta object
+            output measured signal(s). It can be made solely of the recorded signal,
+            if you did not measure the reference output; or it can be a 2 channel measurement
+            made of the mic (sensor) channel and the reference channel.
+        """        
+        # Cross correlation
+        Rxy = correlate(yt.timeSignal.flatten(), 
+                           self.xt.timeSignal.flatten(), mode = 'same')
+        # Delay tau vector
+        lags = np.linspace(-0.5*len(Rxy)/self.fs, 0.5*len(Rxy)/self.fs, len(Rxy))
+        # Find max in Cross-corr
+        max_lags_id = np.where(Rxy == np.amax(Rxy))[0][0]
+        # Find delay in seconds and samples
+        delay_sec = lags[max_lags_id]
+        delay_samples = int(delay_sec*self.fs)
+        return delay_sec, delay_samples
+    
+    def shift_xt(self, delay_samples = 0):
+        """ shift the mathematical sweep in time
+        
+        The idea here is to shift the mathematical sweep by an amount that matches
+        the recorded reference sweep
+        
+        Parameters
+        ----------
+        delay_samples : int
+            number of samples to shift
+        """
+        xt_vec_shifted = np.roll(self.xt.timeSignal.flatten(), 
+                                 shift = delay_samples)
+        xt_shifted = pytta.classes.SignalObj(
+            signalArray = xt_vec_shifted, 
+            domain='time', samplingRate = self.fs, freqMin = self.freq_min,
+              freqMax = self.freq_max)
+        return xt_shifted
+    
+    def pearson_corr_coef(self, sig1, sig2):
+        """ Computes the Pearson Correlation Coefficient between 2 signals
+        
+        Parameters
+        ----------
+        sig1 : numpy1dArray
+            numpy array containing a real signal. Can be time dommain, magnitude, etc
+        sig2 : numpy1dArray
+            numpy array containing a real signal. Can be time dommain, magnitude, etc
+            Must be same size as sig1
+        """
+        if len(sig1) != len(sig2):
+            raise ValueError('signal 1 must be the same size as signal 2.')
+        correlation_matrix = np.corrcoef([sig1, sig2])
+        pcc = correlation_matrix[0, 1]
+        return pcc
+    
+    def pcc_magspk(self, yt, ref_ch = 1):
+        """ Computes the PCC between the magnitude spectra of a recording and the ref. sweep
+        
+        Parameters
+        ----------
+        yt : pytta SigObj
+            pytta Signal Object containing the recording
+        ref_ch : int
+            Reference channel to compute the PCC
+        """
+        # Split the recording to find ref channel
+        yt_ref = yt.split()[ref_ch]
+        # Find frequency indexes
+        id_freq_min = np.where(self.xt.freqVector > self.freq_min)[0][0]
+        id_freq_max = np.where(self.xt.freqVector < self.freq_max)[0][-1]
+        # Filtered spectrum
+        ref_spk = self.xt.freqSignal[id_freq_min:id_freq_max].flatten()
+        sig_spk = yt_ref.freqSignal[id_freq_min:id_freq_max].flatten()   
+        # PCC - SPK
+        pcc = self.pearson_corr_coef(np.abs(ref_spk), np.abs(sig_spk))
+        return pcc
+    
+    def pcc_time(self, yt, ref_ch = 1):
+        """ Computes the PCC between the time-domain of a recording and the ref. sweep
+        
+        Parameters
+        ----------
+        yt : pytta SigObj
+            pytta Signal Object containing the recording
+        ref_ch : int
+            Reference channel to compute the PCC
+        """
+        # Split the recording to find ref channel
+        yt_ref = yt.split()[ref_ch]
+        # Find delay and ajust reference signal
+        delay_sec, delay_samples = self.cross_corr_delay_id(yt = yt_ref)
+        xt_ref = self.shift_xt(delay_samples = delay_samples)
+        # Normalize
+        xt_ref_norm = xt_ref.timeSignal.flatten()/np.amax(xt_ref.timeSignal.flatten())
+        yt_ref_norm = yt_ref.timeSignal.flatten()/np.amax(yt_ref.timeSignal.flatten())
+        # PCC - SPK
+        pcc = self.pearson_corr_coef(xt_ref_norm, yt_ref_norm)
+        return pcc
+    
     def set_arduino_parameters(self,):
         """ set arduino parameters
         
@@ -903,15 +1045,62 @@ class ScannerMeasurement():
         print('\n Moving ended. I will shut down the board instance! \n')
         self.board.shutdown()
         
-    def sequential_measurement(self, meas_with_ni = False, 
-                               bypass_scanner = False,
-                               noise_at_each_nth = None):
+    def playback_and_record(self,):
+        """ Playback and record according to setup choice
+        """
+        if self.play_rec_type == 'NI play and rec': # play-rec with NI
+            yt_obj = self.ni_play_rec()
+        elif self.play_rec_type == 'SC play and rec':  # play-rec with NI
+            yt_obj = self.pytta_play_rec()
+        else:
+            raise ValueError("Invalid choice of playback and record")
+        return yt_obj
+    
+    def pcc_playback_and_record(self, pcc_min = 0.999, 
+                                max_num_of_trials = 20):
+        """ Performs playback and record multiple times until you find good PCC
+        
+        Evoke playback and record while PCC is bad
+        Parameters
+        ----------
+        pcc_min : float
+            The minimum value of PCC to a given quality.
+        max_num_of_trials : int
+            The maximum number of measurement trials. After this number we go on.
+        """
+        trial_num = 1
+        pcc_val = 0
+        while trial_num <= max_num_of_trials and pcc_val < pcc_min:
+            # PLayback and record
+            yt_obj = self.playback_and_record()
+            pcc_val = self.pcc_magspk(yt_obj, ref_ch = 1)
+            if pcc_val < pcc_min:
+                trial_num += 1
+                print("PCC = {}. I'll do a measurement #{}.".format(pcc_val, trial_num))
+                self.failure_count += 1                
+            else:
+                print("\n PCC = {}".format(pcc_val))
+        return yt_obj
+    
+    def noise_record(self,):
+        """ Playback and record according to setup choice
+        """
+        if self.play_rec_type == 'NI play and rec': # rec with NI
+            print("NI not done yet")
+        elif self.play_rec_type == 'SC play and rec':  # rec with NI
+            yt_obj = self.pytta_rec_noise()
+        else:
+            raise ValueError("Invalid choice of recording")
+        return yt_obj
+        
+    def sequential_measurement(self, bypass_scanner = False,
+                               noise_at_each_nth = None,
+                               pcc_min = 0.999,
+                               max_num_of_trials = 20):
         """ Move all motors sequentially through the array positions
         
         Parameters
         ----------
-        meas_with_ni : bool
-            whether to measure wit NI or not. Default is False
         bypass_scanner : bool
             whether to bypass motor movement. We can use it to test measurement features.
             Default is False (so that motors will move)
@@ -926,7 +1115,8 @@ class ScannerMeasurement():
         if noise_at_each_nth is None:
             noise_at_each_nth = int(10*self.receivers.coord.shape[0])
         noise_counter = 1
-        
+        # Start failure count at 0 (we can count how many measurements failed)
+        self.failure_count = 0
         # Get starting time
         self.start_timestamp = datetime.now()
         for jrec in range(self.receivers.coord.shape[0]):
@@ -935,33 +1125,28 @@ class ScannerMeasurement():
                 self.move_motor_xyz(self.stand_array[jrec,:])
             # Take measurement and save it            
             for jmeas in range(self.repetitions):
+                # Greetings for this measurement (playback and record)
                 print('\n Playback and record at Receiver {} of {} (Repeat {} of {})'.format(
                     jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
-                if meas_with_ni:
-                    yt_obj = self.ni_play_rec()
-                else: # measure with pytta
-                    yt_obj = self.pytta_play_rec()               
-                # ptta saving the playrec measurement
-                filename = 'rec' + str(int(jrec)) +\
-                    '_m' + str(int(jmeas)) + '.hdf5'
-                complete_path = self.main_folder / self.name / 'measured_signals'
-                pytta.save(str(complete_path / filename), yt_obj)
+                # PLayback and record
+                # yt_obj = self.playback_and_record()
+                yt_obj = self.pcc_playback_and_record(pcc_min = pcc_min,
+                                                      max_num_of_trials = max_num_of_trials)
+                # ptta saving the measurement
+                self.save_meas_file(yt_obj, jrec, jmeas, meas_type = 'playrec', 
+                                   folder = 'measured_signals')
             # Noise measurement
-            # if noise_at_each_nth == int(noise_counter*jrec-1):
             if jrec+1 == int(noise_counter*noise_at_each_nth):
-                print('\n Recording noise level at Receiver {} of {}'.format(jrec+1, 
+                # Greetings for this measurement (background noise)
+                print('\n Recording background noise level at Receiver {} of {}'.format(jrec+1, 
                      self.receivers.coord.shape[0]))
-                noise_obj = self.pytta_rec_noise()
-                # ptta saving the rec measurement
-                filename = 'noise' + str(int(jrec)) + '.hdf5'
-                complete_path = self.main_folder / self.name / 'measured_signals'
-                pytta.save(str(complete_path / filename), noise_obj)
+                # Record noise
+                noise_obj = self.noise_record() #self.pytta_rec_noise()
+                # ptta saving the measurement
+                self.save_meas_file(noise_obj, jrec, meas_type = 'noise', 
+                                   folder = 'measured_signals')
                 noise_counter += 1 # increment counter for next noise measurement
-                
-            
-            # append all to main list
-            #yt_list.append(y_rep_list)
-            # Take temperature and humidity
+
             # Take temperature and pressure
             #### To Do
             self.temperature_list.append(self.temperature_current)
@@ -969,12 +1154,45 @@ class ScannerMeasurement():
         # update control object
         if not bypass_scanner:
             self.board.shutdown()
+            print('\n I will shut down the board instance! \n')
         # Get ending time
         self.stop_timestamp = datetime.now()
+        # Save control object
         self.save()        
-        print('\n Measurement ended. I will shut down the board instance! \n')
-        #return yt_list
+        print('\n Measurement ended. Farewell, mellon!') # say goodbye
     
+    def save_meas_file(self, yt_obj, jrec, jmeas = 0, meas_type = 'playrec', 
+                       folder = 'measured_signals'):
+        """ Automatic naming and file saving of recordings or noise
+        
+        Parameters
+        ----------
+        yt_obj : Pytta Signal Obj
+            measured signal. Can be either a sweep (rec) or a noise measurement
+        jrec : int
+            index of the receiver being measured
+        jmeas : int
+            index of the repetition being measured
+        meas_type : str
+            Your measurement is either 'playrec' (a sweep playback and record)
+            or a background 'noise' measurement
+        folder : str
+            Folder to save to. For normal recordings it will be 'measured_signals'.
+            For correction recordings it will be 'correction_signals'
+        """
+        if meas_type == 'playrec':
+            filename = 'rec' + str(int(jrec)) +\
+                '_m' + str(int(jmeas)) + '.hdf5'
+            complete_path = self.main_folder / self.name / folder
+            pytta.save(str(complete_path / filename), yt_obj)
+        elif meas_type == 'noise':
+            # ptta saving the rec measurement
+            filename = 'noise' + str(int(jrec)) + '.hdf5'
+            complete_path = self.main_folder / self.name / 'measured_signals'
+            pytta.save(str(complete_path / filename), yt_obj)
+        else:
+            raise ValueError("Invalid measurement type to save.")
+        
     
     def take_measurements(self, repetitions = 1, meas_name = 'name'):
         """ Move all motors sequentially through the array positions
@@ -1006,10 +1224,7 @@ class ScannerMeasurement():
         freq = ht.irSignal.freqVector
         mag_h = 20*np.log10(np.abs(ht.irSignal.freqSignal))
         fig = plt.figure(num = 1, figsize = (7,5))
-        plt.semilogx(freq, mag_h)
-        
-        
-        
+        plt.semilogx(freq, mag_h)     
     
     def delete_unpickleable_vars(self,):
         """ Delete pytta, NI, and telemetrix objects

@@ -117,7 +117,7 @@ class NIMeasurement(object):
     def get_num_blocks(self,):
         """ Discover the number of blocks to measure and the number of samples to append.
         
-        The number of blocks is given bu the intended signal length (num_of_samples)
+        The number of blocks is given by the intended signal length (num_of_samples)
         divided by the buffer_size.
         
         The plain division may give you a non-integer number_of_blocks. 
@@ -249,8 +249,11 @@ class NIMeasurement(object):
             Sensitivity of the sensor in [mV/SensorUnits]. [SensorUnits] will be fetched 
             depending on the type
         ai_range : float
-            The voltage range of your measurement in [V]. Your scale goes from
-            -ai_range to +ai_range
+            The range you expect to measure. Usually given in the unity of your sensor. 
+            Thus, if you are measuring Volts, it is given in Volts. If in m/s^2, given in m/s^2.
+            The only exception is the Microphone, for which the scale is given in dB SPL.
+            This will be the maximum value of your measurement and the max value in Volts will be
+            computed for every channel set up.
         """
         # sensor_units, sensitivity_units = self.get_units(sensor_type = sensor_type)
         # Get sensor units and sensitivity units in a dictionary with keys in a list
