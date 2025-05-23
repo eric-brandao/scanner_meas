@@ -254,6 +254,18 @@ class ScannerMeasurement():
         else:
             print("The measurement files you seek do not exist in the folder you specified")
 
+    def create_correction_folder(self,):
+        """ In case you have measurements to correct, we will create a correction folder
+        """
+        measurement_folder = self.main_folder / self.name
+        correction_folder = measurement_folder / 'corrected_signals'
+        if measurement_folder.exists() and not correction_folder.exists():
+            print("correction folder does not exist. We will create one empty!")
+            correction_folder.mkdir(parents = False, exist_ok = False)
+        else:
+            print("Seems like your 'corrected_signals' folder already exists. Proceed with care.")
+        
+        
     # def ni_set_config_dicts(self, input_dict = dict(terminal = 'cDAQ1Mod1/ai0', 
     #          mic_sens = 51.4, current_exc_sensor = 0.0022,
     #          max_min_val = [-5, 5]),
@@ -826,7 +838,7 @@ class ScannerMeasurement():
         # original array
         self.receivers = receiver_obj
         # Changing order of the points:
-        order1 = utils.order_closest(pt0, self.receivers.coord)
+        order1, _ = utils.order_closest(pt0, self.receivers.coord)
         # new array
         self.receivers.coord = order1
         # creating the matrix with all distances between all points
@@ -1075,6 +1087,7 @@ class ScannerMeasurement():
             yt_obj = self.playback_and_record()
             pcc_val = self.pcc_magspk(yt_obj, ref_ch = 1)
             if pcc_val < pcc_min:
+                time.sleep(1)
                 trial_num += 1
                 print("PCC = {}. I'll do a measurement #{}.".format(pcc_val, trial_num))
                 self.failure_count += 1                
@@ -1095,7 +1108,7 @@ class ScannerMeasurement():
         
     def sequential_measurement(self, bypass_scanner = False,
                                noise_at_each_nth = None,
-                               pcc_min = 0.999,
+                               pcc_min = 0.9999,
                                max_num_of_trials = 20):
         """ Move all motors sequentially through the array positions
         
@@ -1110,6 +1123,11 @@ class ScannerMeasurement():
             number of receivers, so that the noise level will never be recorded.
             If the value is less than the number of receivers, than the noise level
             will be recorded each time that the n-th receiver is being recorded
+        pcc_min : float
+            The minimum value of pcc required for a quality measurement.
+            0.9999 is a good practice from literature    
+        max_num_of_trials : int
+            maximum number of trials, after which we go on with the measurement
         """
         # if noise_at_each_nth is None, set it to a value higher than the num of recs
         if noise_at_each_nth is None:
@@ -1160,6 +1178,137 @@ class ScannerMeasurement():
         # Save control object
         self.save()        
         print('\n Measurement ended. Farewell, mellon!') # say goodbye
+        
+    def sequential_correction_measurement(self, flagged_measurements_ids,
+                                          pt0 = None, bypass_scanner = False,
+                                          pcc_min = 0.9999, max_num_of_trials = 20):
+        """ Move all motors sequentially through the array positions
+        
+        Parameters
+        ----------
+        flagged_measurements_ids : numpy 1dArray
+            An numpy array with the measurements indexes that failed
+        pt0 : numpy 1dArray
+            coordinate of the initial pointo of the microphone
+        bypass_scanner : bool
+            whether to bypass motor movement. We can use it to test measurement features.
+            Default is False (so that motors will move)
+        pcc_min : float
+            The minimum value of pcc required for a quality measurement.
+            0.9999 is a good practice from literature    
+        max_num_of_trials : int
+            maximum number of trials, after which we go on with the measurement
+        """
+        # Compute the receivers and stand array (for correction)
+        receivers_corr, stand_array_corr, ids_corr = self.set_correction_receiver_array(
+            flagged_measurements_ids = flagged_measurements_ids, 
+            pt0 = pt0)
+        
+        # playback and record loop
+        for jrec, flagged_id in enumerate(ids_corr):
+            # Move the motor
+            if not bypass_scanner:
+                self.move_motor_xyz(stand_array_corr[jrec,:])
+            # Take measurement and save it            
+            for jmeas in range(self.repetitions):
+                # Original measurement RMS value
+                old_rec = self.load_meas_byindex(
+                    idrec = flagged_measurements_ids[flagged_id], idmed = jmeas)
+                old_rec_rms = old_rec.rms()
+                # Greetings for this measurement (playback and record)
+                print('\n Playback and record at Receiver {} of {} (Repeat {} of {})'.format(
+                    jrec+1, len(flagged_measurements_ids), jmeas+1, self.repetitions))
+                print('\n Remeasure Receiver {} at ({}).'.format(
+                    flagged_measurements_ids[flagged_id],
+                    self.receivers.coord[flagged_measurements_ids[flagged_id],:]))
+                
+                #PLayback and record
+                ##yt_obj = self.playback_and_record()
+                yt_obj = self.pcc_playback_and_record(pcc_min = pcc_min,
+                                                      max_num_of_trials = max_num_of_trials)
+                # Level correction
+                yt_obj = self.rms_level_correction(yt_obj, old_rec_rms)
+                
+                # ptta saving the measurement
+                self.save_meas_file(yt_obj, flagged_measurements_ids[flagged_id], 
+                                    jmeas, meas_type = 'playrec', 
+                                    folder = 'corrected_signals')
+
+            # # Take temperature and pressure
+            # #### To Do
+            # self.temperature_list.append(self.temperature_current)
+            # self.humidity_list.append(self.humidity_current)
+        # update control object
+        if not bypass_scanner:
+            self.board.shutdown()
+            print('\n I will shut down the board instance! \n')
+        # Save control object
+        self.save()        
+        print('\n Measurement ended. Farewell, mellon!') # say goodbye
+    
+    def set_correction_receiver_array(self, flagged_measurements_ids, pt0 = None):
+        """ set the array of receivers
+        
+        Parameters
+        ----------
+        receiver_obj : object Receiver()
+            object from Receiver class
+        pt0 : numpy 1dArray
+            coordinate of the initial pointo of the microphone
+        """
+        # Starting position initialization
+        if pt0 is None:
+            pt0 = np.array([0, 0, 0])
+        else:
+            pt0 = pt0
+        # Correction array
+        receivers_corr = Receiver()
+        receivers_corr.coord = self.receivers.coord[flagged_measurements_ids,:]
+        # Changing order of the points:
+        order1, ids_corr = utils.order_closest(pt0, receivers_corr.coord)
+        order1[:,0] = -order1[:,0]
+        # new array
+        receivers_corr.coord = order1
+        # creating the matrix with all distances between all points
+        stand_array_corr = utils.matrix_stepper(pt0, receivers_corr.coord)
+        return receivers_corr, stand_array_corr, ids_corr
+          
+    def load_meas_byindex(self, idrec = 0, idmed = 0):
+        """" Load measurement by index of array mic, and return the pytta object
+        
+        Parameters
+        ------------
+        idrec : int
+            Index of recording to be loaded - array index
+        idmed : int
+            Index of measurement to be loaded - repetition index       
+        """
+        # rec0_m0
+        filename = 'rec' + str(int(idrec)) + '_m' + str(int(idmed)) + '.hdf5'
+        complete_path = self.main_folder / self.name / 'measured_signals'
+        med_dict = pytta.load(str(complete_path / filename))
+        keyslist = list(med_dict.keys())
+        yt = med_dict[keyslist[0]]
+        return yt
+    
+    def rms_level_correction(self, yt_obj, old_rms):
+        """ Computes the rms of the measuremnt and ajust level
+        
+        Parameters
+        ------------
+        yt : pytta SigObj
+            pytta Signal Object containing the recording
+        old_rms : numpy 1dArray
+            RMS of all channels of old recording  
+        """
+        yt_rms = yt_obj.rms()
+        yt_time_signal = np.zeros(yt_obj.timeSignal.shape)
+        for jch in range(yt_obj.timeSignal.shape[1]):
+            sens_adjust = old_rms[jch]/yt_rms[jch]
+            yt_time_signal[:, jch] = sens_adjust * yt_obj.timeSignal[:, jch]
+        yt_obj.timeSignal = yt_time_signal      
+        return yt_obj
+        
     
     def save_meas_file(self, yt_obj, jrec, jmeas = 0, meas_type = 'playrec', 
                        folder = 'measured_signals'):

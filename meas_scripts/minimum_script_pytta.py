@@ -76,7 +76,7 @@ meas_obj.load()
 meas_obj.set_motors()
 #%%
 yt_list = meas_obj.sequential_measurement(bypass_scanner = True, noise_at_each_nth = 2,
-                                          pcc_min = 0.999,
+                                          pcc_min = 0.9999,
                                           max_num_of_trials = 20)
 
 #%% load one meas and check

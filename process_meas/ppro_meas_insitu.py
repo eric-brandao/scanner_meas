@@ -64,7 +64,7 @@ class InsituMeasurementPostPro():
         # self.fs = fs
         self.t_bypass = t_bypass
         
-    def load_meas_byindex(self, idrec = 0, idmed = 0):
+    def load_meas_byindex(self, idrec = 0, idmed = 0, folder_type = 'measured_signals'):
         """" Load measurement by index of array mic, and return the pytta object
         
         Parameters
@@ -76,7 +76,7 @@ class InsituMeasurementPostPro():
         """
         # rec0_m0
         filename = 'rec' + str(int(idrec)) + '_m' + str(int(idmed)) + '.hdf5'
-        complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'measured_signals'
+        complete_path = self.meas_obj.main_folder / self.meas_obj.name / folder_type
         med_dict = pytta.load(str(complete_path / filename))
         keyslist = list(med_dict.keys())
         yt = med_dict[keyslist[0]]

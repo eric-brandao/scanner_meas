@@ -91,7 +91,7 @@ def order_closest(pt0, coordinates): # ToDo - on testing it seems to be doing no
     
     # change of signal in the x-axis (God knows why) # ToDo: Check this
     ordered_coord[:,0] = -ordered_coord[:,0]
-    return ordered_coord
+    return ordered_coord, index
 
 def matrix_stepper(pt0, coordinates):
     """ Computes the x,y,z distances to move each motor
