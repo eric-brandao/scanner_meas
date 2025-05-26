@@ -14,9 +14,6 @@ Created on Thu Oct 27 15:23:05 2022 - minimum measurement script
 import numpy as np
 import matplotlib.pyplot as plt
 from ni_measurement import NIMeasurement
-from sequential_measurement import ScannerMeasurement
-from receivers import Receiver
-from sources import Source
 import pytta
 #%% Generate a reference sweep
 fs = 51200

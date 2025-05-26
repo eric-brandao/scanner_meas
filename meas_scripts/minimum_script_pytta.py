@@ -30,7 +30,7 @@ meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
     audio_interface = 'Scarlet 4i4 4th Gen',
     amplifier = 'BK 2718',
     source_type = 'spherical speaker', source = source,
-    start_new_measurement = True)
+    start_new_measurement = True, repetitions = 2)
 
 #%%
 meas_obj.set_measurement_date()
@@ -44,13 +44,12 @@ meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
 
 #%%
 meas_obj.pytta_play_rec_setup(in_channel = [1, 3], out_channel = [1, 2],
-                         in_channel_ref = 3, in_channel_sensor = 1,
-                         output_amplification = -3, repetitions = 2)
+                         in_channel_ref_num = 3, output_amplification = -3)
 
 #%%
 yt = meas_obj.pytta_play_rec()
 #%%
-ht = meas_obj.ir(yt, regularization=True, deconv_with_rec = False)
+ht = meas_obj.ir(yt, regularization=True, deconv_with_rec = True)
 ht.IR.plot_time(xLim = (0, 1000e-3))
 ht.IR.plot_freq()
 #%%
