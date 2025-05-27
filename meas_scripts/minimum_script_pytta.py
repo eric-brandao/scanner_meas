@@ -30,7 +30,7 @@ meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
     audio_interface = 'Scarlet 4i4 4th Gen',
     amplifier = 'BK 2718',
     source_type = 'spherical speaker', source = source,
-    start_new_measurement = True, repetitions = 2)
+    start_new_measurement = True, repetitions = 1)
 
 #%%
 meas_obj.set_measurement_date()

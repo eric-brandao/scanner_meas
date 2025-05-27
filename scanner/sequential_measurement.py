@@ -387,22 +387,57 @@ class ScannerMeasurement():
         # self.in_channel_ref_onrec = in_channel_ref_onrec
         # self.in_channel_sensor_onrec = in_channel_sensor_onrec
         self.in_channel = in_channel
-        self.get_ref_and_other_chs(in_channel_ref_num = in_channel_ref_num)
+        self.in_channel_ref_num = in_channel_ref_num
+        self.get_ref_and_other_chs()
         self.ai_range = ai_range
         self.sensor_sens = sensor_sens
         self.sensor_current = sensor_current
         # Set Voltage reference channel
-        self.ni_control_obj.set_sensor_properties(sensor_type = 'voltage',
-                                                  physical_channel_num =\
-                                                      self.in_channel[self.in_channel_ref], 
-                                                  sensitivity = 1, ai_range = self.ai_range)
-        # Set Microphone channel (only 1 at seq measurement for now)
-        self.ni_control_obj.set_sensor_properties(sensor_type = 'microphone',
-                                                  physical_channel_num = \
-                                                      self.in_channel_sensor[0],
-                                                  sensor_current = sensor_current, 
-                                                  sensitivity = self.sensor_sens, 
-                                                  ai_range = 130)
+        # self.ni_control_obj.set_sensor_properties(sensor_type = 'voltage',
+        #                                           physical_channel_num =\
+        #                                               self.in_channel[self.in_channel_ref], 
+        #                                           sensitivity = 1, ai_range = self.ai_range)
+        # # Set Microphone channel (only 1 at seq measurement for now)
+        # self.ni_control_obj.set_sensor_properties(sensor_type = 'microphone',
+        #                                           physical_channel_num = \
+        #                                               self.in_channel_sensor[0],
+        #                                           sensor_current = sensor_current, 
+        #                                           sensitivity = self.sensor_sens, 
+        #                                           ai_range = 130)
+        self.ni_set_1mic_1volt_chs()
+        # self.in_channel_ref = 0
+        # self.in_channel_sensor = [1]
+        
+    def ni_set_1mic_1volt_chs(self,):
+        """ Set 1 mic and 1 voltage channel in the correct order
+        """
+        if self.in_channel_ref < self.in_channel_sensor[0]: # voltage comes first 
+            # Set Voltage reference channel
+            self.ni_control_obj.set_sensor_properties(sensor_type = 'voltage',
+                                                      physical_channel_num =\
+                                                          self.in_channel[self.in_channel_ref], 
+                                                      sensitivity = 1, ai_range = self.ai_range)
+            # Set Microphone channel (only 1 at seq measurement for now)
+            self.ni_control_obj.set_sensor_properties(sensor_type = 'microphone',
+                                                      physical_channel_num = \
+                                                          self.in_channel_sensor[0],
+                                                      sensor_current = self.sensor_current, 
+                                                      sensitivity = self.sensor_sens, 
+                                                      ai_range = 130)
+        else:
+            # Set Microphone channel (only 1 at seq measurement for now)
+            self.ni_control_obj.set_sensor_properties(sensor_type = 'microphone',
+                                                      physical_channel_num = \
+                                                          self.in_channel_sensor[0],
+                                                      sensor_current = self.sensor_current, 
+                                                      sensitivity = self.sensor_sens, 
+                                                      ai_range = 130)
+            # Set Voltage reference channel
+            self.ni_control_obj.set_sensor_properties(sensor_type = 'voltage',
+                                                      physical_channel_num =\
+                                                          self.in_channel[self.in_channel_ref], 
+                                                      sensitivity = 1, ai_range = self.ai_range)
+            
         
     
     def pytta_play_rec_setup(self, in_channel = [1, 2], out_channel = [1, 2],
@@ -412,7 +447,8 @@ class ScannerMeasurement():
         self.play_rec_type = 'SC play and rec'
         self.in_channel = in_channel
         self.out_channel = out_channel
-        self.get_ref_and_other_chs(in_channel_ref_num = in_channel_ref_num)
+        self.in_channel_ref_num = in_channel_ref_num
+        self.get_ref_and_other_chs()
         #self.in_channel_ref = in_channel_ref # I'll leave it here for later (for now it is unused)
         # self.in_channel_sensor = in_channel_sensor # I'll leave it here for later (for now it is unused)
         self.output_amplification = output_amplification
@@ -428,10 +464,10 @@ class ScannerMeasurement():
             outChannels = self.out_channel,
             outputAmplification = self.output_amplification)
 
-    def get_ref_and_other_chs(self, in_channel_ref_num = 1):
+    def get_ref_and_other_chs(self, ):
         """ Get correct indexes of reference and other channels
         """
-        self.in_channel_ref = self.in_channel.index(in_channel_ref_num)
+        self.in_channel_ref = self.in_channel.index(self.in_channel_ref_num)
         self.in_channel_sensor = [i for i in range(len(self.in_channel)) if i != self.in_channel_ref]
         
 
@@ -975,7 +1011,7 @@ class ScannerMeasurement():
             raise ValueError("Invalid choice of playback and record")
         return yt_obj
     
-    def pcc_playback_and_record(self, pcc_min = 0.999, 
+    def pcc_playback_and_record(self, pcc_min = 0.9999, 
                                 max_num_of_trials = 20,
                                 reference_signal = None, 
                                 playback_device = None):
@@ -1358,7 +1394,7 @@ class ScannerMeasurement():
                                         out_channel_to_amp = self.out_channel_to_amp, 
                                         ao_range = self.ao_range)
             self.ni_set_input_channels(in_channel = self.in_channel, 
-                                    in_channel_ref_num = self.in_channel_ref,
+                                    in_channel_ref_num = self.in_channel_ref_num,
                                     ai_range = self.ai_range, 
                                     sensor_sens = self.sensor_sens, 
                                     sensor_current = self.sensor_current)

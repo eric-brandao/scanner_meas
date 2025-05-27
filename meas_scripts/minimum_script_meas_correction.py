@@ -22,7 +22,7 @@ ppro_obj.meas_obj.print_meas_data()
 #%% Compute PCC of all recorded signals
 ppro_obj.pcc_magspk(yt_list = rec_signals, ref_ch = 1)
 #%% Flag the bad ones
-ppro_obj.flag_measurements(min_pcc = 0.9999, spk_pcc = True)
+ppro_obj.flag_measurements(min_pcc = 0.99, spk_pcc = True)
 print("Flagged measurements (indexes): {}".format(ppro_obj.problematic_measurements))
 print("Percentual of failure: {:.2f} % ({} of {} measurements)".format(
     100*len(ppro_obj.problematic_measurements)/ppro_obj.meas_obj.receivers.coord.shape[0],
@@ -35,8 +35,7 @@ ppro_obj.meas_obj.pytta_list_devices()
 #%% Set audio devices again (for sound card)
 ppro_obj.meas_obj.pytta_set_device(device = 16)
 ppro_obj.meas_obj.pytta_play_rec_setup(in_channel = [1, 3], out_channel = [1, 2],
-                         in_channel_ref = 3, in_channel_sensor = 1,
-                         output_amplification = -3, repetitions = 1)
+                         in_channel_ref_num = 3, output_amplification = -3)
 
 #%% Retake the measurements
 pt0 = [0, 0, 0.05] # Starting point
