@@ -146,8 +146,9 @@ class InsituMeasurementPostPro():
         bar.close()
         return ht_list
     
-    def compute_all_ir_load(self, regularization = True,  deconv_with_rec = True, 
-                       only_linear_part = True):
+    def compute_all_ir_load(self, regularization = True,  deconv_with_rec = True,
+                            freq_limits = None, only_linear_part = True, 
+                            reverse_phase = False):
         
        """Compute all Impulse responses while loading measurement files. Saves memory
        """
@@ -168,7 +169,9 @@ class InsituMeasurementPostPro():
                
                # Compute ht
                ht = self.meas_obj.ir(yt, regularization = regularization,
-                                     deconv_with_rec =  deconv_with_rec)
+                                     deconv_with_rec =  deconv_with_rec,
+                                     freq_limits = freq_limits,
+                                     reverse_phase = reverse_phase)
                ht_rep_list.append(ht.IR)
            # take mean IR
            ht_mean_pytta = self.mean_ir(ht_rep_list, only_linear_part = only_linear_part)
@@ -682,7 +685,7 @@ class InsituMeasurementPostPro():
             ht = self.ht_mtx
         # axis
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
+                               sharex = True, sharey = True, squeeze=False)
         counter = 0
         for row in range(figformat[0]):
             for col in range(figformat[1]):
@@ -729,7 +732,7 @@ class InsituMeasurementPostPro():
             Hw = self.Hw_mtx
         # axes
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
+                               sharex = True, sharey = True, squeeze=False)
         counter = 0
         for row in range(figformat[0]):
             for col in range(figformat[1]):
@@ -779,7 +782,7 @@ class InsituMeasurementPostPro():
         time = yt_list[0][0].timeVector
         # axes
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
+                               sharex = True, sharey = True, squeeze=False)
         counter = 0
         for row in range(figformat[0]):
             for col in range(figformat[1]):
@@ -829,7 +832,7 @@ class InsituMeasurementPostPro():
         freq = yt_list[0][0].freqVector
         # axes
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
+                               sharex = True, sharey = True, squeeze=False)
         counter = 0
         for row in range(figformat[0]):
             for col in range(figformat[1]):

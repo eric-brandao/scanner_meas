@@ -519,7 +519,7 @@ class ScannerMeasurement():
     #     return yt_rec_obj
        
     def ir(self, yt, regularization = True, deconv_with_rec = True,
-           lag_mat_sweep = True, freq_limits = None):
+           lag_mat_sweep = True, freq_limits = None, reverse_phase = False):
         """ Computes the impulse response of a given output
         
         Parameters
@@ -541,6 +541,8 @@ class ScannerMeasurement():
         freq_limits : list or None
             List of two values with desired regularization limits. 
             If None (default) we use self.freq_min and self.freq_max as regularization
+        reverse_phase : bool
+            Whether to reverse the phase of IR or not. Default is false
         """
         if freq_limits is None:
             freq_limits = [self.freq_min, self.freq_max]
@@ -564,7 +566,8 @@ class ScannerMeasurement():
         ht = pytta.ImpulsiveResponse(excitation = ref_sig, 
              recording = rec_sig, samplingRate = self.fs, 
              regularization = regularization, freq_limits = freq_limits)
-        
+        if reverse_phase:
+            ht.IR.timeSignal = -ht.IR.timeSignal
         return ht
 
     def cross_corr_delay_id(self, yt):
@@ -790,7 +793,7 @@ class ScannerMeasurement():
         self.load()
         
     def plot_scene(self, L_x = 0.6, L_y = 0.6, sample_thickness = 0.1,
-                   baffle_size = 1.2, elev = 30, azim = 45):
+                   baffle_size = 1.2, elev = 30, azim = 45, savefig = True):
         """ Plot of the scene using matplotlib - not redered
     
         Parameters
@@ -876,8 +879,9 @@ class ScannerMeasurement():
         ax.set_zlim((-sample_thickness, baffle_size))
         ax.view_init(elev=elev, azim=azim)
         plt.tight_layout()
-        filename = 'measurement_scene.pdf'
-        plt.savefig(fname = self.main_folder /self.name / filename, format='pdf', dpi = 300)
+        if savefig:
+            filename = 'measurement_scene.pdf'
+            plt.savefig(fname = self.main_folder /self.name / filename, format='pdf', dpi = 300)
         plt.show()
 
     def stepper_run_base(self, motor, steps_to_send):
@@ -1387,17 +1391,19 @@ class ScannerMeasurement():
             self.pytta_play_rec_setup(in_channel = self.in_channel, out_channel = self.out_channel, 
                                       output_amplification = self.output_amplification)
         else:
-            print('measured_signals')
-            self.ni_initializer(buffer_size = self.buffer_size, 
-                                play_rec_type = self.play_rec_type)
-            self.ni_set_output_channels(out_channel_to_ni = self.out_channel_to_ni, 
-                                        out_channel_to_amp = self.out_channel_to_amp, 
-                                        ao_range = self.ao_range)
-            self.ni_set_input_channels(in_channel = self.in_channel, 
-                                    in_channel_ref_num = self.in_channel_ref_num,
-                                    ai_range = self.ai_range, 
-                                    sensor_sens = self.sensor_sens, 
-                                    sensor_current = self.sensor_current)
+            try:
+                self.ni_initializer(buffer_size = self.buffer_size, 
+                                    play_rec_type = self.play_rec_type)
+                self.ni_set_output_channels(out_channel_to_ni = self.out_channel_to_ni, 
+                                            out_channel_to_amp = self.out_channel_to_amp, 
+                                            ao_range = self.ao_range)
+                self.ni_set_input_channels(in_channel = self.in_channel, 
+                                        in_channel_ref_num = self.in_channel_ref_num,
+                                        ai_range = self.ai_range, 
+                                        sensor_sens = self.sensor_sens, 
+                                        sensor_current = self.sensor_current)
+            except:
+                print("Seems that NI is not connected. Load object without being able to measure again.")
         self.__dict__.update(tmp_dict)
         
         
