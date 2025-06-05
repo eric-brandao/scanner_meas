@@ -695,7 +695,15 @@ class ScannerMeasurement():
         
         """
         print('Pre-setting the motors and arduino controller.')
-        self.board = telemetrix.Telemetrix()
+        if hasattr(self,'board'): 
+            #Já existe uma instância ativa
+            # (não testei o que acontece se você sobreescrever board sem realizar o board.shutdown())
+            return
+        try:
+            self.board = telemetrix.Telemetrix(com_port=os.environ['SCANNER_MEAS_PORTSTR'])
+        except: # Primeira conexão com arduino
+            self.board = telemetrix.Telemetrix()
+            os.environ['SCANNER_MEAS_PORTSTR'] = self.board.serial_port.portstr
         # Motors:
         self.motor_x = self.board.set_pin_mode_stepper(interface=1, 
             pin1 = self.arduino_params['step_pins'][0][0], 
