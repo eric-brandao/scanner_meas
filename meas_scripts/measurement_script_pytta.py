@@ -15,8 +15,9 @@ from receivers import Receiver
 from sources import Source
 import pytta
 #%% Naming things
-name = 'testing_meas' #'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
-main_folder = 'D:/Work/dev/scanner_meas/meas_scripts/'#'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
+name = 'pcc_tests' #'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
+# main_folder = 'D:/Work/dev/scanner_meas/meas_scripts/'#'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
+main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
 
 #%% Define your source object - coordinates are important when estimating the impedance sometimes. 
 ### This should be part of measurement metadata
@@ -27,10 +28,10 @@ meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
     mic_sens = 51.4, x_pwm_pin = 2, x_digital_pin = 24,
     y_pwm_pin = 3, y_digital_pin = 26, z_pwm_pin = 5, z_digital_pin = 28,
     dht_pin = 40, pausing_time_array = [8, 8, 8], 
-    material = None, material_type = 'melamine_L60cm_d4cm',
+    material = None, material_type = 'PCCtest',
     temperature = 20, humidity = 0.5,
     microphone_type = 'Behringer ECM 8000',
-    audio_interface = 'M-audio Fast Track Pro',
+    audio_interface = 'Scarlet 4i4 4th Gen',
     amplifier = 'BK 2718',
     source_type = 'spherical speaker', source = source,
     start_new_measurement = True)
@@ -41,10 +42,10 @@ meas_obj.set_measurement_date()
 #%% List pytta devices and choose the ASIO one of your sound card
 meas_obj.pytta_list_devices()
 #%% Set the audio device - if input/output is separate, it should be a list [in, out]
-meas_obj.pytta_set_device(device = 15)
+meas_obj.pytta_set_device(device = 16)
 
 #%% Set the measurement sweep. It will now save the xt in your "measured_signals" folder
-meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 250,
+meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
                        freq_max = 10000, n_zeros_pad = 0)
 
 #%% Do the pytta play-rec setup. Channel numbers is super important.
@@ -72,10 +73,10 @@ noise_sig = meas_obj.pytta_rec_noise()
 #%% Set your receiver array in two stages: (1) - the array; (2) - the starting point (go there and measure it)
 ### Good practice is that your starting point is above or below your array. 
 ### Make sure that the scanner can span everything you asked for.
-receiver_obj = Receiver(coord = [0,0,0.00])
-#receiver_obj.double_rec(z_dist = 0.02)
+receiver_obj = Receiver(coord = [0,0,0.2])
+receiver_obj.double_rec(z_dist = 0.02)
 #receiver_obj.double_planar_array(x_len=0.65,n_x=5,y_len=0.57,n_y=5, zr=0.015, dz=0.03)
-receiver_obj.random_3d_array(x_len = 0.3, y_len = 0.3, z_len = 0.1, zr = 0.02, n_total = 6, seed = 0)
+#receiver_obj.random_3d_array(x_len = 0.3, y_len = 0.3, z_len = 0.1, zr = 0.02, n_total = 6, seed = 0)
 starting_coordinates= np.array([0.0, 0.0, 0.05]); #"--> Coordinates where the michophone is"
 
 # Setting up the array saves every config made to this point

@@ -533,7 +533,35 @@ class NIMeasurement(object):
             # Pass to pytta object 
             meas_sig_obj = pytta.classes.SignalObj(signalArray = recorded_signals, 
                 domain='time', samplingRate = self.fs)
-        return meas_sig_obj 
+        return meas_sig_obj
+    
+    def sc_play_rec(self, reference_signal, device):
+        """ Play signal with sound card and rec signals with NI
+
+        Parameters
+        ----------
+        reference_signal : pytta SignalObject
+            Pytta's signal object to be played back by sound-card
+        device : int
+            Index of a valid port audio device listed with pytta.list_devices()
+        """
+        Coupling.AC
+        with nidaqmx.Task() as read_task:
+            # Write the input channels
+            for sensor in self.sensor_list:
+                self.get_rec_channel(read_task.ai_channels, sensor)
+            # Configure timing, controls and start task
+            self.config_timing(read_task)
+            read_task.control(TaskMode.TASK_COMMIT)
+            reference_signal.play(device = device)
+            read_task.start()
+            # recording loop
+            recorded_signals = self.recording_loop(read_task)
+            # Pass to pytta object 
+            meas_sig_obj = pytta.classes.SignalObj(signalArray = recorded_signals, 
+                domain='time', samplingRate = self.fs)
+            return meas_sig_obj
+    
     
     # def set_output_channels(self,  out_channel_to_ni = 0, out_channel_to_amp = 3,
     #                         ao_range = 10):

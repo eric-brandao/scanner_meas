@@ -9,27 +9,26 @@ Module to control post processing o material measurements
 """
 
 # general imports
-import sys
-import os
+# import sys
+# import os
 from pathlib import Path
-import time
+# import time
 from tqdm import tqdm
-import pickle
+# import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-import scipy.io as io
+# from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+# from mpl_toolkits.mplot3d import Axes3D
+# from matplotlib import cm
+# import scipy.io as io
 from scipy.signal import windows, resample, chirp, find_peaks, find_peaks_cwt
 
 # Pytta imports
 import pytta
 
-
-# Receiver class
-from receivers import Receiver
-from sources import Source
+# # Receiver class
+# from receivers import Receiver
+# from sources import Source
 
 # utils
 import utils
@@ -65,21 +64,34 @@ class InsituMeasurementPostPro():
         # self.fs = fs
         self.t_bypass = t_bypass
         
-    def load_meas_files(self,):
+    def load_meas_byindex(self, idrec = 0, idmed = 0, folder_type = 'measured_signals'):
+        """" Load measurement by index of array mic, and return the pytta object
+        
+        Parameters
+        ------------
+        idrec : int
+            Index of recording to be loaded - array index
+        idmed : int
+            Index of measurement to be loaded - repetition index       
+        """
+        # rec0_m0
+        filename = 'rec' + str(int(idrec)) + '_m' + str(int(idmed)) + '.hdf5'
+        complete_path = self.meas_obj.main_folder / self.meas_obj.name / folder_type
+        med_dict = pytta.load(str(complete_path / filename))
+        keyslist = list(med_dict.keys())
+        yt = med_dict[keyslist[0]]
+        return yt
+        
+    def load_allmeas_files(self, id_med = 0):
         """Load all measurement files
         """
         yt_list = []
         for jrec in range(self.meas_obj.receivers.coord.shape[0]):
             y_rep_list = []
             for jmeas in range(self.meas_obj.repetitions):
-                filename = 'rec' + str(int(jrec)) +\
-                        '_m' + str(int(jmeas)) + '.hdf5'
-                complete_path = self.meas_obj.main_folder / self.meas_obj.name / 'measured_signals'
-                med_dict = pytta.load(str(complete_path / filename))
-                keyslist = list(med_dict.keys())
-                y_rep_list.append(med_dict[keyslist[0]])
+                yt = self.load_meas_byindex(idrec = jrec, idmed = jmeas)
+                y_rep_list.append(yt)
             yt_list.append(y_rep_list)
-            
         return yt_list
     
     # def ir(self, yt, regularization = True):
@@ -134,8 +146,9 @@ class InsituMeasurementPostPro():
         bar.close()
         return ht_list
     
-    def compute_all_ir_load(self, regularization = True,  deconv_with_rec = True, 
-                       only_linear_part = True):
+    def compute_all_ir_load(self, regularization = True,  deconv_with_rec = True,
+                            freq_limits = None, only_linear_part = True, 
+                            reverse_phase = False):
         
        """Compute all Impulse responses while loading measurement files. Saves memory
        """
@@ -156,7 +169,9 @@ class InsituMeasurementPostPro():
                
                # Compute ht
                ht = self.meas_obj.ir(yt, regularization = regularization,
-                                     deconv_with_rec =  deconv_with_rec)
+                                     deconv_with_rec =  deconv_with_rec,
+                                     freq_limits = freq_limits,
+                                     reverse_phase = reverse_phase)
                ht_rep_list.append(ht.IR)
            # take mean IR
            ht_mean_pytta = self.mean_ir(ht_rep_list, only_linear_part = only_linear_part)
@@ -351,8 +366,50 @@ class InsituMeasurementPostPro():
             self.nfft_half = int((nfft+1)/2)
             
         self.freq_Hw = np.linspace(0, (nfft-1)*self.meas_obj.fs/nfft, nfft)[:self.nfft_half]
-        self.Hww_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
+        self.Hw_mtx = np.fft.fft(self.ht_mtx, axis = 1)[:,:self.nfft_half]
+    
+    def pcc_magspk(self, yt_list, ref_ch = 1):
+        """ Computes the PCC between the magnitude of a recording and the ref. sweep
         
+        Performs the calculations for all recordings in yt_list
+        
+        Parameters
+        ----------
+        yt_list : list
+            list of all singal objects (pytta)
+        ref_ch : int
+            Reference channel to compute the PCC
+        """
+        num_recs = len(yt_list)
+        self.pcc_spk = np.zeros((num_recs, self.meas_obj.repetitions))
+        bar = tqdm(total = num_recs*self.meas_obj.repetitions,
+            desc = 'Computing PCC (SPK) for all signals')
+        for jrec in range(num_recs):
+            for jrep in range(self.meas_obj.repetitions):
+                self.pcc_spk[jrec, jrep] = self.meas_obj.pcc_magspk(yt_list[jrec][jrep],
+                                                                    ref_ch = ref_ch)
+                bar.update(1)
+        bar.close()
+    
+    def flag_measurements(self, min_pcc = 0.99, spk_pcc = True):
+        """ Flags a given measurement
+        
+        If the computed PCC is lower than min_pcc, the measurement will be flagged as bad.
+        
+        Parameters
+        ----------
+        min_pcc : float
+            Minimum value of PCC for which the measurement is considered good.
+        spk_pcc : bool
+            PCC via spectral mode (default is True).
+        """
+        if spk_pcc:
+            pcc_mtx = self.pcc_spk
+        else:
+            pcc_mtx = self.pcc_spk # The same now. Later we compute it in time dommain
+        # Find problematic measurements
+        self.problematic_measurements = np.where(np.any(pcc_mtx < min_pcc, axis=1))[0]
+    
     def reset_freq_resolution(self, freq_init = 100, freq_end = 4000, delta_freq = 5):
         """ If you don't want all your frequencies, use this to generate a new
         self.Hwww_mtx
@@ -388,10 +445,103 @@ class InsituMeasurementPostPro():
                 Hw_sm[a] = self.Hww_mtx[a];
         return Hw_sm
 
+    def plot_signal(self, ax = None, xdata = None, ydata = None, 
+                    data_label = 'any', xlabel = 'Time [s]', ylabel = 'Amplitude [-]',
+                    xlims = None, ylims = None, xlog = False, alpha = 0.7,
+                    linestyle = '-'):
+        
+        if ax is None: # create a general axis is ax is None
+            fig, ax = plt.subplots(1, 1, figsize = (8, 4))
+        
+        if xlog:
+            ax.semilogx(xdata, ydata, label = data_label, alpha = alpha,
+                        linestyle = linestyle)
+        else:
+            ax.plot(xdata, ydata, label = data_label, alpha = alpha,
+                    linestyle = linestyle)
+            
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.grid(linestyle = '--')
+        if xlims is not None:
+            ax.set_xlim(xlims)
+        if ylims is not None:
+            ax.set_ylim(ylims)
+        return ax
     
-    def plot_ir(self, ax, idir = 0, normalize = True, xlims = (0, 50e-3),
-                windowed = False):
-        """ plot an axis with ht
+    # def fetch_sigobj_from_list(yt_list, idrec = 0, idmed = 0):
+    #     """ Fetch your signal object
+    #     """
+    #     return yt_list[idrec][idmed]
+        
+    def plot_meas_time(self, yt_list, idrec = 0, idmed = 0, xlims = None, ylims = None):
+        """ plot single signal in time domain - all channels
+        
+        Parameters 
+        ---------------
+        yt : list
+            list of all singal objects (pytta)
+        idrec : int
+            index of recording (receiver)
+        idmed : int
+            index of measurement (repetition)
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        ylims : tuple
+            min and max values of your y-axis (limit view)
+        """
+        yt = yt_list[idrec][idmed]
+        fig, ax = plt.subplots(1, 1, figsize = (10, 4))
+        for jch in range(yt.timeSignal.shape[1]):
+            ax = self.plot_signal(ax = ax, xdata = yt.timeVector, 
+                             ydata = yt.timeSignal[:, jch],
+                             xlims = xlims, ylims = ylims,
+                             xlabel = 'Time [s]', ylabel = r'$y(t)$ [-]',
+                             data_label = "Rec. # {}, Rep. {}, Ch. {}".format(idrec, idmed, jch))
+            ax.legend()
+    
+    def plot_meas_spk(self, yt_list, idrec = 0, idmed = 0, 
+                      xlims = (20, 20000), ylims = None):
+        """ plot single signal in time domain - all channels
+        
+        Parameters 
+        ---------------
+        yt : list
+            list of all singal objects (pytta)
+        idrec : int
+            index of recording (receiver)
+        idmed : int
+            index of measurement (repetition)
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        ylims : tuple
+            min and max values of your y-axis (limit view)
+        """
+        yt = yt_list[idrec][idmed]
+        fig, ax = plt.subplots(1, 1, figsize = (10, 4))
+        for jch in range(yt.timeSignal.shape[1]):
+            ax = self.plot_signal(ax = ax, xdata = yt.freqVector, 
+                             ydata = 20*np.log10(np.abs(yt.freqSignal[:, jch])),
+                             xlims = xlims, ylims = ylims,
+                             xlabel = 'Frequency [Hz]', ylabel = r'$|H(f)|$ [-]',
+                             data_label = "Rec. # {}, Rep. {}, Ch. {}".format(idrec, idmed, jch),
+                             xlog = True)
+            ax.legend()
+    
+    def plot_ir(self, idir = 0, xlims = (0, 20e-3), 
+                normalize = True, windowed = False):
+        """ plot single Impulse response
+        
+        Parameters 
+        ---------------
+        idir : int
+            index of the impulse response to plot
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        normalized : bool
+            whether to normalize or not the IR
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
         """
         if windowed:
             ht = self.htw_mtx[idir, :]
@@ -400,105 +550,311 @@ class InsituMeasurementPostPro():
         
         if normalize:
             ht = ht/np.amax(ht)
-
-        ax.plot(self.time_ht, ht, label = "Rec #{}".format(idir))
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Amplitude [-]")
-        ax.grid()
-        ax.set_xlim(xlims)
+            
+        ax = self.plot_signal(xdata = self.time_ht, ydata = ht, 
+                         data_label = "Rec #{}".format(idir), 
+                         xlabel = 'Time [s]', ylabel = r'$h(t)$ [-]',
+                         xlims = xlims, xlog = False, alpha = 0.7)
+        ax.legend()
         
-    def ir_raw_vs_windowed(self, idir = 0, normalize = True, xlims = (0, 50e-3)):
+    def ir_raw_vs_windowed(self, idir = 0, xlims = (0, 20e-3),
+                           normalize = True):
         """ Compare same IR before and after windowing
+        
+        Parameters 
+        ---------------
+        idir : int
+            index of the impulse response to plot
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        normalized : bool
+            whether to normalize or not the IR
         """
         if normalize:
             ht = self.ht_mtx[idir,:]/np.amax(self.ht_mtx[idir,:])
             htw = self.htw_mtx[idir,:]/np.amax(self.htw_mtx[idir,:])
-            
-        plt.figure()
-        plt.plot(self.time_ht, ht , '-k', label = 'raw', linewidth = 2)
-        plt.plot(self.time_ht, htw, '-r', label = 'windowed', alpha = 0.7)
-        plt.plot(self.time_ht, self.adrienne_win, '--b', label = 'window', alpha = 0.7)
-        plt.grid()
-        plt.legend()
-        plt.xlim(xlims)
-        plt.xlabel("Time [s]")
-        plt.ylabel("Amplitude [-]")
-                
-    def plot_all_ir(self, figsize = (15,20), figformat = (7,9),
-                    normalize = True, xlims = (0, 50e-3), windowed = False):
-        """plot almost all irs
-        """
-        # Number of curves per axis
-        num_of_axis = figformat[0]*figformat[1]
-        num_of_cur_axis = int(self.meas_obj.receivers.coord.shape[0]/num_of_axis)
         
-        fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
-        counter = 0
-        for row in range(figformat[0]):
-            for col in range(figformat[1]):
-                for curv in range(num_of_cur_axis):
-                    self.plot_ir(ax[row, col], idir = counter,
-                                 normalize = normalize, xlims = xlims,
-                                 windowed = windowed)
-                    counter += 1
-                if windowed == False:
-                    ax[row, col].plot(self.time_ht, self.adrienne_win, 'k')
-                ax[row, col].set_xlabel("")
-                ax[row, col].set_ylabel("")
-                ax[figformat[0]-1, col].set_xlabel("Time [s]")
-            ax[row, 0].set_ylabel("Amplitude [-]")
-        plt.tight_layout() 
-       
-    def plot_frf_mag(self, ax, idir = 0, xlims = (20, 20000), ylims = (-150, -20),
-                windowed = False, color = None, alpha = None, label = None):
-        """ plot an axis with FRF
+        fig, ax = plt.subplots(1, 1, figsize = (8, 4))
+        
+        ax = self.plot_signal(ax = ax, xdata = self.time_ht, ydata = ht, 
+                          data_label = "Rec #{} - raw".format(idir), 
+                          xlabel = 'Time [s]', ylabel = r'$h(t)$ [-]',
+                          xlims = xlims, xlog = False, alpha = 1.0)
+        
+        ax = self.plot_signal(ax = ax, xdata = self.time_ht, ydata = htw, 
+                          data_label = "Rec #{} - windowed".format(idir), 
+                          xlabel = 'Time [s]', ylabel = r'$h(t)$ [-]',
+                          xlims = xlims, xlog = False, alpha = 0.7,
+                          linestyle = '--')
+        
+        ax.plot(self.time_ht, self.adrienne_win, '--k', alpha = 0.7, 
+                label = 'window')
+        
+        # ax = self.plot_signal(ax = ax, xdata = self.time_ht, ydata = self.adrienne_win, 
+        #                   data_label = "window".format(idir), 
+        #                   xlabel = 'Time [s]', ylabel = r'$h(t)$ [-]',
+        #                   xlims = xlims, xlog = False, alpha = 0.7,
+        #                   linestyle = '--')
+        ax.legend()
+        
+    def plot_frf_mag(self, idir = 0, xlims = None, ylims = None,
+                windowed = False):
+        """ plot single FRF magnitude
+        
+        Parameters 
+        ---------------
+        idir : int
+            index of the impulse response to plot
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        ylims : tuple
+            min and max values of your y-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
         """
         if windowed:
             Hw = self.Hww_mtx[idir, :]
         else:
-            Hw = np.fft.fft(self.ht_mtx[idir,:])[:self.nfft_half]
+            Hw = self.Hw_mtx[idir, :]# np.fft.fft(self.ht_mtx[idir,:])[:self.nfft_half]
         
-        ax.semilogx(self.freq_Hw, 20*np.log10(np.abs(Hw)), color = color,
-                    alpha = alpha, label = label)
+        ax = self.plot_signal(xdata = self.freq_Hw, ydata = 20*np.log10(np.abs(Hw)), 
+                         data_label = "Rec #{}".format(idir), 
+                         xlabel = 'Frequency [Hz]', ylabel = r'$|H(f)|$ [-]',
+                         xlims = xlims, ylims = ylims, xlog = True, alpha = 0.7)
         ax.legend()
-        ax.grid(visible=True, which = 'both', linestyle='-')
-        ax.set_xlabel("Frequency [Hz]")
-        ax.set_ylabel(r"$|H(f)|$ [dB]")
-        ax.set_xlim(xlims)
-        ax.set_ylim(ylims)
         
-    def frf_raw_vs_windowed(self, idir = 0, xlims = (20, 20000), ylims = (-80, -20)):
-        """ Compare same FRF before and after windowing
-        """     
-        fig, ax = plt.subplots(1, figsize = (7,5))
-        self.plot_frf_mag(ax, idir = idir, xlims = xlims, ylims = ylims, windowed = False,
-                          color = 'b', alpha = 0.5, label = "Raw: Rec #{}".format(idir))
-        self.plot_frf_mag(ax, idir = idir, xlims = xlims, ylims = ylims, windowed = True,
-                          color = 'm', alpha = 1.0, label = "Windowed: Rec #{}".format(idir))
-    
-    def plot_all_wfrf(self, figsize = (15,20), figformat = (7,9),
-                    xlims = (20, 20000), ylims = (-80, -20)):
-        """plot almost all irs
+    def frf_raw_vs_windowed(self, idir = 0, xlims = None, ylims = None):
+        """ Compare Raw vs. Windowed FRF magnitude
+        
+        Parameters 
+        ---------------
+        idir : int
+            index of the impulse response to plot
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        ylims : tuple
+            min and max values of your y-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
+        """
+        Hw_raw = self.Hw_mtx[idir, :]
+        Hw_win = self.Hww_mtx[idir, :]
+                
+        fig, ax = plt.subplots(1, 1, figsize = (8, 4))
+        ax = self.plot_signal(ax = ax, 
+                              xdata = self.freq_Hw, ydata = 20*np.log10(np.abs(Hw_raw)),
+                              data_label = "Rec #{} - raw".format(idir),
+                              xlabel = 'Frequency [Hz]', ylabel = r'$|H(f)|$ [-]',
+                              xlims = xlims, ylims = ylims, xlog = True, alpha = 1.0)
+        
+        ax = self.plot_signal(ax = ax, 
+                              xdata = self.freq_Hw, ydata = 20*np.log10(np.abs(Hw_win)),
+                              data_label = "Rec #{} - windowed".format(idir),
+                              xlabel = 'Frequency [Hz]', ylabel = r'$|H(f)|$ [-]',
+                              xlims = xlims, ylims = ylims, xlog = True, alpha = 1.0)
+        ax.legend()
+             
+    def num_curves_per_axis(self, figformat):
+        """ get number of curves per axes
+        """
+        num_of_axis = figformat[0]*figformat[1]
+        num_of_cur_axis = int(self.meas_obj.receivers.coord.shape[0]/num_of_axis)
+        return num_of_cur_axis
+            
+    def plot_all_ir(self, figsize = (20, 10), figformat = (6,8),
+                    xlims = (0, 20e-3), windowed = False):
+        """ plot all irs (normalized)
+        
+        Parameters 
+        ---------------
+        figsize : tuple
+            size of the final figure
+        figformat : tuple
+            number of rows and columns of the figure
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
         """
         # Number of curves per axis
-        num_of_axis = figformat[0]*figformat[1]
-        num_of_cur_axis = int(self.receivers.coord.shape[0]/num_of_axis)
-        
+        num_of_cur_axis = self.num_curves_per_axis(figformat = figformat)
+        # choose windowed or not
+        if windowed:
+            ht = self.htw_mtx
+        else:
+            ht = self.ht_mtx
+        # axis
         fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
-                               sharex = True, sharey = True)
+                               sharex = True, sharey = True, squeeze=False)
         counter = 0
         for row in range(figformat[0]):
             for col in range(figformat[1]):
                 for curv in range(num_of_cur_axis):
-                    self.plot_frf_mag(ax[row, col], idir = counter,
-                                 xlims = xlims, ylims = ylims, windowed = True)
+                    ht_plt = ht[counter,:]/np.amax(ht[counter,:])
+                    ax[row, col] = self.plot_signal(ax = ax[row, col], 
+                                                    xdata = self.time_ht, 
+                                                    ydata = ht_plt, 
+                                                    xlabel = 'Time [s]', 
+                                                    ylabel = r'$h(t)$ [-]',
+                                                    xlims = xlims, 
+                                                    xlog = False, alpha = 0.7)
                     counter += 1
-                
                 ax[row, col].set_xlabel("")
                 ax[row, col].set_ylabel("")
+                ax[row, col].set_title("# {}-{}".format(counter-num_of_cur_axis,counter-1),
+                                       loc = 'right')
+                ax[figformat[0]-1, col].set_xlabel("Time [s]")
+            ax[row, 0].set_ylabel(r'$h(t)$ [-]')
+        plt.suptitle("Amplitude (IR) / Windowed: {}".format(str(windowed)))
+        plt.tight_layout()      
+    
+    def plot_all_frf(self, figsize = (20, 10), figformat = (6,8),
+                    xlims = (20, 20000), ylims = None, windowed = False):
+        """ plot all FRF's
+        
+        Parameters 
+        ---------------
+        figsize : tuple
+            size of the final figure
+        figformat : tuple
+            number of rows and columns of the figure
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
+        """
+        # Number of curves per axis
+        num_of_cur_axis = self.num_curves_per_axis(figformat = figformat)
+        # choose windowed or not
+        if windowed:
+            Hw = self.Hww_mtx
+        else:
+            Hw = self.Hw_mtx
+        # axes
+        fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
+                               sharex = True, sharey = True, squeeze=False)
+        counter = 0
+        for row in range(figformat[0]):
+            for col in range(figformat[1]):
+                for curv in range(num_of_cur_axis):
+                    Hw_plt = 20*np.log10(np.abs(Hw[counter,:]))
+                    ax[row, col] = self.plot_signal(ax = ax[row, col], 
+                                                    xdata = self.freq_Hw, 
+                                                    ydata = Hw_plt, 
+                                                    xlabel = 'Frequency [Hz]', 
+                                                    ylabel = r'$|H(f)|$ [dB]',
+                                                    xlims = xlims,
+                                                    ylims = ylims,
+                                                    xlog = True, alpha = 0.7)
+                    counter += 1
+                ax[row, col].set_xlabel("")
+                ax[row, col].set_ylabel("")
+                ax[row, col].set_title("# {}-{}".format(counter-num_of_cur_axis,counter-1),
+                                       loc = 'right')
                 ax[figformat[0]-1, col].set_xlabel("Frequency [Hz]")
             ax[row, 0].set_ylabel(r"$|H(f)|$ [dB]")
+        plt.suptitle("Magnitude (FRF) / Windowed: {}".format(str(windowed)))
+        plt.tight_layout()
+        
+    def plot_all_meas_time(self, yt_list, ch = 0, idmed = 0, figsize = (20, 10), figformat = (6,8),
+                    xlims = (20, 20000), ylims = None):
+        """ plot all FRF's
+        
+        Parameters 
+        ---------------
+        yt_list : list
+            list of all singal objects (pytta)
+        ch : int
+            Which channel to plot
+        idmed : int
+            index of measurement (repetition) 
+        figsize : tuple
+            size of the final figure
+        figformat : tuple
+            number of rows and columns of the figure
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
+        """
+        # Number of curves per axis
+        num_of_cur_axis = self.num_curves_per_axis(figformat = figformat)
+        time = yt_list[0][0].timeVector
+        # axes
+        fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
+                               sharex = True, sharey = True, squeeze=False)
+        counter = 0
+        for row in range(figformat[0]):
+            for col in range(figformat[1]):
+                for curv in range(num_of_cur_axis):
+                    yt_plt = yt_list[counter][idmed].timeSignal[:,ch]
+                    ax[row, col] = self.plot_signal(ax = ax[row, col], 
+                                                    xdata = time, 
+                                                    ydata = yt_plt, 
+                                                    xlabel = 'Time [s]', 
+                                                    ylabel = r'$y(t)$ [-]',
+                                                    xlims = xlims,
+                                                    ylims = ylims,
+                                                    xlog = False, alpha = 0.7)
+                    counter += 1
+                ax[row, col].set_xlabel("")
+                ax[row, col].set_ylabel("")
+                ax[row, col].set_title("# {}-{}".format(counter-num_of_cur_axis,counter-1),
+                                       loc = 'right')
+                ax[figformat[0]-1, col].set_xlabel("Time [s]")
+            ax[row, 0].set_ylabel(r'$y(t)$ [-]')
+        plt.suptitle("Amplitude (time) of Ch. {}, Rep. {}".format(ch, idmed))
+        plt.tight_layout()
+        
+    def plot_all_meas_spk(self, yt_list, ch = 0, idmed = 0, figsize = (20, 10), figformat = (6,8),
+                    xlims = (20, 20000), ylims = None):
+        """ plot all FRF's
+        
+        Parameters 
+        ---------------
+        yt : list
+            list of all singal objects (pytta)
+        ch : int
+            Which channel to plot
+        idmed : int
+            index of measurement (repetition) 
+        figsize : tuple
+            size of the final figure
+        figformat : tuple
+            number of rows and columns of the figure
+        xlims : tuple
+            min and max values of your x-axis (limit view)
+        windowed : bool
+            whether to plot windowed or non-windowed IR (if already computed)
+        """
+        # Number of curves per axis
+        num_of_cur_axis = self.num_curves_per_axis(figformat = figformat)
+        freq = yt_list[0][0].freqVector
+        # axes
+        fig, ax = plt.subplots(figformat[0], figformat[1], figsize = figsize,
+                               sharex = True, sharey = True, squeeze=False)
+        counter = 0
+        for row in range(figformat[0]):
+            for col in range(figformat[1]):
+                for curv in range(num_of_cur_axis):
+                    yt_spk = yt_list[counter][idmed].freqSignal[:,ch]
+                    Yw_plt = 20*np.log10(np.abs(yt_spk))
+                    ax[row, col] = self.plot_signal(ax = ax[row, col], 
+                                                    xdata = freq, 
+                                                    ydata = Yw_plt, 
+                                                    xlabel = 'Frequency [Hz]', 
+                                                    ylabel = r'$|Y(f)|$ [dB]',
+                                                    xlims = xlims,
+                                                    ylims = ylims,
+                                                    xlog = True, alpha = 0.7)
+                    counter += 1
+                ax[row, col].set_xlabel("")
+                ax[row, col].set_ylabel("")
+                ax[row, col].set_title("# {}-{}".format(counter-num_of_cur_axis,counter-1), 
+                                       loc = 'right')
+                ax[figformat[0]-1, col].set_xlabel("Frequency [Hz]")
+            ax[row, 0].set_ylabel(r"$|Y(f)|$ [dB]")
+        plt.suptitle("Magnitude (Spk) of Ch. {}, Rep. {}".format(ch, idmed))
         plt.tight_layout()
         
     def save(self, filename = 'qdt', path = ''):
