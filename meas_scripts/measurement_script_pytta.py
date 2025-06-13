@@ -15,9 +15,10 @@ from receivers import Receiver
 from sources import Source
 import pytta
 #%% Naming things
-name = 'pcc_tests' #'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
-# main_folder = 'D:/Work/dev/scanner_meas/meas_scripts/'#'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
-main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
+# name = 'pcc_tests' #'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
+# main_folder = 'D:/Work/UFSM/Pesquisa/insitu_arrays/experimental_dataset/reptest_eric/'# use forward slash
+name = 'testing_meas' #'melamine_L60cm_d3cm_s100cm_2mics_17072024' # Remember good practices --> samplename_arraykeyword_ddmmaaaa
+main_folder = 'D:/Work/dev/scanner_meas/meas_scripts/'# use forward slash
 
 #%% Define your source object - coordinates are important when estimating the impedance sometimes. 
 ### This should be part of measurement metadata
@@ -34,7 +35,7 @@ meas_obj = ScannerMeasurement(main_folder = main_folder, name = name,
     audio_interface = 'Scarlet 4i4 4th Gen',
     amplifier = 'BK 2718',
     source_type = 'spherical speaker', source = source,
-    start_new_measurement = True)
+    start_new_measurement = True, repetitions = 1)
 
 ### set a date as today
 meas_obj.set_measurement_date()
@@ -51,7 +52,7 @@ meas_obj.set_meas_sweep(method = 'logarithmic', freq_min = 100,
 #%% Do the pytta play-rec setup. Channel numbers is super important.
 meas_obj.pytta_play_rec_setup(in_channel = [1, 3], out_channel = [1, 2],
                          output_amplification = -3,
-                         repetitions = 1)
+                         in_channel_ref_num = 3)
 
 #%% measure loopback response and save it (if wanted)
 ### plug the output of the sound card on the input, measure and save the IR. 
@@ -61,7 +62,7 @@ meas_obj.pytta_play_rec_setup(in_channel = [1, 3], out_channel = [1, 2],
 #%% You can test a measurement if you want - check for clipping and other potential problems
 ### If you feel like changing your sweep design, you can re-run things 
 yt = meas_obj.pytta_play_rec()
-
+yt.plot_time();
 #%% Chech an impulse response - Does it look ok?
 ht = meas_obj.ir(yt, regularization=True, deconv_with_rec = True)
 ht.IR.plot_time(xLim = (0, 1));
@@ -89,10 +90,8 @@ meas_obj.plot_scene(L_x = 0.6, L_y = 0.6, sample_thickness = 0.03, baffle_size =
 meas_obj.set_motors()
 
 #%% Perform sequential measurement - measured responses will be saved authomatically at your "measured_signals" folder
-### Choose repetitions > 1 if you want to average the Impulse responses.
-meas_obj.sequential_measurement(bypass_scanner = True, noise_at_each_nth = 2)
-
-
+meas_obj.sequential_measurement(bypass_scanner = True, noise_at_each_nth = 2,
+                                pcc_min = 0.999, max_num_of_trials = 2)
 
 #%% move back
 meas_obj.set_motors()
