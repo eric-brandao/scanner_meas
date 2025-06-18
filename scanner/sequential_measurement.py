@@ -29,7 +29,10 @@ import pytta
 # from pytta.classes import SignalObj, FRFMeasure
 # from pytta import ImpulsiveResponse, save, merge
 from ni_measurement import NIMeasurement
-from src.lanxi_measurement import LANXIMeasurement
+try:
+    from src.lanxi_measurement import LANXIMeasurement
+except:
+    print("Not possible to use LANXI in this environment.")
 
 # Arduino imports
 from telemetrix import telemetrix
