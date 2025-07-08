@@ -47,6 +47,9 @@ class InsituMeasurementPostPro():
                                            start_new_measurement = False)
         
         # load all measured information
+        if not hasattr(self.meas_obj, 'play_rec_type'):
+            self.meas_obj.play_rec_type = 'SC play and rec'
+        
         self.meas_obj.load()
         # Correct the main_folder variable
         self.meas_obj.main_folder = Path(main_folder)

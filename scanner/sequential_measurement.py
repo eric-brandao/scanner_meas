@@ -1075,7 +1075,7 @@ class ScannerMeasurement():
                                               playback_device = playback_device)
             pcc_val = self.pcc_magspk(yt_obj, ref_ch = self.in_channel_ref)
             if pcc_val < pcc_min:
-                time.sleep(1)
+                time.sleep(3)
                 trial_num += 1
                 print("PCC = {}. I'll do a measurement #{}.".format(pcc_val, trial_num))
                 self.failure_count += 1                
