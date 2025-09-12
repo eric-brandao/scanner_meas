@@ -29,6 +29,10 @@ import pytta
 # from pytta.classes import SignalObj, FRFMeasure
 # from pytta import ImpulsiveResponse, save, merge
 from ni_measurement import NIMeasurement
+try:
+    from src.lanxi_measurement import LANXIMeasurement
+except:
+    print("Not possible to use LANXI in this environment.")
 
 # Arduino imports
 from telemetrix import telemetrix
@@ -438,8 +442,45 @@ class ScannerMeasurement():
                                                           self.in_channel[self.in_channel_ref], 
                                                       sensitivity = 1, ai_range = self.ai_range)
             
+<<<<<<< Updated upstream
         
     
+=======
+    def lanxi_initializer(self, ip_address = "169.254.180.173",
+                          sensor_dict_list = None, in_channel_ref_num = 1):
+        """ Initialize NI for measurement
+        
+        Parameters
+        ----------
+        ip_address : str
+            The IP address of your LANXI. After initialized it appears on its little screen.
+        """
+        
+        self.ip_address = ip_address
+        self.sensor_dict_list = sensor_dict_list
+        self.play_rec_type = 'LANXI play and rec'
+        self.lanxi_control_obj = LANXIMeasurement(ip_address = ip_address, 
+                                                  reference_signal = self.xt)
+        self.in_channel_ref_num = in_channel_ref_num
+        self.in_channel = []
+        for sensor in sensor_dict_list:
+            self.in_channel.append(sensor['physical_channel_num'])
+            self.lanxi_control_obj.set_sensor_properties(
+                sensor_type = sensor['sensor_type'], 
+                physical_channel_num = sensor['physical_channel_num'],
+                sensitivity = sensor['sensitivity'], 
+                ai_range = sensor['ai_range'],
+                optimal_channel_range = sensor['optimal_channel_range'])
+        self.get_ref_and_other_chs()
+        
+    # def lanxi_set_input_channels(self, in_channel = [1, 2], in_channel_ref_num = 1):
+    #     """ Set Input channels channels
+    #     """
+    #     self.in_channel = in_channel
+    #     self.in_channel_ref_num = in_channel_ref_num
+    #     self.get_ref_and_other_chs()
+        
+>>>>>>> Stashed changes
     def pytta_play_rec_setup(self, in_channel = [1, 2], out_channel = [1, 2],
                              in_channel_ref_num = 1, output_amplification = -3):
         """ Configure measurement of response signal using pytta and sound card
@@ -506,9 +547,35 @@ class ScannerMeasurement():
         print('Acqusition ended')
         return yt_rec_obj
     
+<<<<<<< Updated upstream
     # def ni_play_rec(self,):
     #     """ Measure response signal using pytta and NI
         
+=======
+    def lanxi_rec_noise(self,):
+        """ Measure the microphone signal in the enviroment
+        
+        For SNR estimations
+        
+        Returns
+        ----------
+        yt_rec_obj : pytta object
+            output signal
+        """
+        in_sensor_channel_list = []
+        for jch in self.in_channel_sensor:
+            in_sensor_channel_list.append(self.in_channel[jch])
+        
+        print('Acqusition started (Recording noise level)')
+
+        yt_rec_obj = self.lanxi_control_obj.rec()
+        print('Acqusition ended')
+        return yt_rec_obj
+    
+    # def ni_play_rec(self,):
+    #     """ Measure response signal using pytta and NI
+        
+>>>>>>> Stashed changes
     #     Returns
     #     ----------
     #     yt_rec_obj : pytta object
@@ -696,14 +763,13 @@ class ScannerMeasurement():
         """
         print('Pre-setting the motors and arduino controller.')
         
-        if hasattr(self,'board'): # Já existe uma instância ativa
-            return
         
         try:
             self.board = telemetrix.Telemetrix(com_port=os.environ['SCANNER_MEAS_COMPORT'])
         except: # Primeira conexão com arduino
             self.board = telemetrix.Telemetrix()
             os.environ['SCANNER_MEAS_COMPORT'] = self.board.serial_port.portstr
+
         
         # Motors:
         self.motor_x = self.board.set_pin_mode_stepper(interface=1, 
@@ -932,6 +998,16 @@ class ScannerMeasurement():
             steps_to_send = int(pre_steps_to_send)
             self.exit_flag = 0
             self.stepper_run_base(motor, steps_to_send)
+        elif abs(dist) >= 0.4:
+            steps_to_send = int(pre_steps_to_send/4)
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)            
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)
+            self.exit_flag = 0
+            self.stepper_run_base(motor, steps_to_send)
         else:
             steps_to_send = int(pre_steps_to_send/2)
             self.exit_flag = 0
@@ -1020,6 +1096,11 @@ class ScannerMeasurement():
                                                      device = playback_device)
         elif self.play_rec_type == 'SC play and rec':  # play-rec with NI
             yt_obj = self.pytta_play_rec()
+<<<<<<< Updated upstream
+=======
+        elif self.play_rec_type == 'LANXI play and rec':
+            yt_obj = self.lanxi_control_obj.play_rec()
+>>>>>>> Stashed changes
         else:
             raise ValueError("Invalid choice of playback and record")
         return yt_obj
@@ -1046,7 +1127,11 @@ class ScannerMeasurement():
                                               playback_device = playback_device)
             pcc_val = self.pcc_magspk(yt_obj, ref_ch = self.in_channel_ref)
             if pcc_val < pcc_min:
+<<<<<<< Updated upstream
                 time.sleep(1)
+=======
+                time.sleep(3)
+>>>>>>> Stashed changes
                 trial_num += 1
                 print("PCC = {}. I'll do a measurement #{}.".format(pcc_val, trial_num))
                 self.failure_count += 1                
@@ -1063,6 +1148,11 @@ class ScannerMeasurement():
             print("NI not done yet. Going on...")
         elif self.play_rec_type == 'SC play and rec':  # rec with NI
             yt_obj = self.pytta_rec_noise()
+<<<<<<< Updated upstream
+=======
+        elif self.play_rec_type == 'LANXI play and rec':
+            yt_obj = self.lanxi_rec_noise()
+>>>>>>> Stashed changes
         else:
             raise ValueError("Invalid choice of recording")
         return yt_obj
@@ -1071,7 +1161,11 @@ class ScannerMeasurement():
                                noise_at_each_nth = None,
                                pcc_min = 0.9999,
                                max_num_of_trials = 20,
+<<<<<<< Updated upstream
                                reference_signal = None, playback_device = None):
+=======
+                               reference_signal = None, playback_device = None, notify_func= None):
+>>>>>>> Stashed changes
         """ Move all motors sequentially through the array positions
         
         Parameters
@@ -1108,6 +1202,14 @@ class ScannerMeasurement():
                 # Greetings for this measurement (playback and record)
                 print('\n Playback and record at Receiver {} of {} (Repeat {} of {})'.format(
                     jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
+<<<<<<< Updated upstream
+=======
+                
+                if notify_func is not None:
+                    notify_func('\n Playback and record at Receiver {} of {} (Repeat {} of {})'.format(
+                    jrec+1, self.receivers.coord.shape[0], jmeas+1, self.repetitions))
+                
+>>>>>>> Stashed changes
                 # PLayback and record
                 # yt_obj = self.playback_and_record()
                 yt_obj = self.pcc_playback_and_record(pcc_min = pcc_min,
@@ -1358,9 +1460,15 @@ class ScannerMeasurement():
         if hasattr(self, 'pytta_meas'):
             del temp_dict['pytta_meas']
         if hasattr(self, 'board'):
+            # try:
+            #    # board.shutdown_flag = True quando ta desligado
+            #     self.board.shutdown()
+            # finally:
             del temp_dict['board']
         if hasattr(self, 'ni_control_obj'):
             del temp_dict['ni_control_obj']
+        if hasattr(self, 'lanxi_control_obj'):
+            del temp_dict['lanxi_control_obj']
         
         return temp_dict
     
@@ -1385,7 +1493,7 @@ class ScannerMeasurement():
             tmp_dict = pickle.load(f)
         f.close()
         self.__dict__.update(tmp_dict)
-
+        # Try loading xt if it exists - Before 2024 it was not an attribute. 
         try:
             complete_path = self.main_folder / self.name / 'measured_signals'
             med_dict = pytta.load(str(complete_path / 'xt.hdf5'))
@@ -1396,10 +1504,34 @@ class ScannerMeasurement():
                     freq_min = self.freq_min, freq_max = self.freq_max,
                     n_zeros_pad = self.n_zeros_pad, save_xt = False)
         self.Nsamples = len(self.xt.timeSignal[:,0])
-        if self.sound_card_measurement:
-            self.pytta_play_rec_setup(in_channel = self.in_channel, out_channel = self.out_channel, 
+        
+        if self.play_rec_type == 'SC play and rec':#self.sound_card_measurement:
+            print("Loading on PayRec type as {}".format(self.play_rec_type))
+            self.pytta_play_rec_setup(in_channel = self.in_channel, 
+                                      out_channel = self.out_channel, 
                                       output_amplification = self.output_amplification)
+        elif self.play_rec_type == 'NI play and rec' or self.play_rec_type == 'SC play and NI rec':
+            try:
+                print("Loading on PayRec type as {}".format(self.play_rec_type))
+                self.ni_initializer(buffer_size = self.buffer_size, 
+                                    play_rec_type = self.play_rec_type)
+                self.ni_set_output_channels(out_channel_to_ni = self.out_channel_to_ni, 
+                                            out_channel_to_amp = self.out_channel_to_amp, 
+                                            ao_range = self.ao_range)
+                self.ni_set_input_channels(in_channel = self.in_channel, 
+                                        in_channel_ref_num = self.in_channel_ref_num,
+                                        ai_range = self.ai_range, 
+                                        sensor_sens = self.sensor_sens, 
+                                        sensor_current = self.sensor_current)
+            except:
+                print("Seems that NI is not connected. Load object without being able to measure again.")
+        elif self.play_rec_type =='LANXI play and rec':
+            print("Loading on PayRec type as {}".format(self.play_rec_type))
+            self.lanxi_initializer(ip_address = self.ip_address, 
+                                   sensor_dict_list = self.sensor_dict_list,
+                                   in_channel_ref_num = self.in_channel_ref_num)
         else:
+<<<<<<< Updated upstream
             try:
                 self.ni_initializer(buffer_size = self.buffer_size, 
                                     play_rec_type = self.play_rec_type)
@@ -1413,6 +1545,13 @@ class ScannerMeasurement():
                                         sensor_current = self.sensor_current)
             except:
                 print("Seems that NI is not connected. Load object without being able to measure again.")
+=======
+            print("Loading on PayRec type as PyTTa for lack of clarity")
+            self.pytta_play_rec_setup(in_channel = self.in_channel, 
+                                      out_channel = self.out_channel, 
+                                      output_amplification = self.output_amplification)
+        
+>>>>>>> Stashed changes
         self.__dict__.update(tmp_dict)
         
         
