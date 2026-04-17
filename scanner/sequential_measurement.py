@@ -912,7 +912,7 @@ class ScannerMeasurement():
         ax.grid(False)
         ax.set_xlim((-baffle_size/2, baffle_size/2))
         ax.set_ylim((-baffle_size/2, baffle_size/2))
-        ax.set_zlim((-sample_thickness, baffle_size))
+        ax.set_zlim((-sample_thickness, 1.2*self.source.coord[0, 2]))
         ax.view_init(elev=elev, azim=azim)
         plt.tight_layout()
         if savefig:

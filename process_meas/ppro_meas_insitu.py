@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 # from mpl_toolkits.mplot3d import Axes3D
 # from matplotlib import cm
 # import scipy.io as io
+import scipy
 from scipy.signal import windows, resample, chirp, find_peaks, find_peaks_cwt
 
 # Pytta imports
@@ -32,6 +33,7 @@ import pytta
 
 # utils
 import utils
+import utils_insitu as ut_is
 from sequential_measurement import ScannerMeasurement
 
 class InsituMeasurementPostPro():
@@ -358,6 +360,92 @@ class InsituMeasurementPostPro():
         self.freq_Hw = np.linspace(0, (nfft-1)*self.meas_obj.fs/nfft, nfft)[:self.nfft_half]
         self.Hww_mtx = np.fft.fft(self.htw_mtx, axis = 1)[:,:self.nfft_half]
         
+    def rms_correction_smooth(self, smoothed_data):
+        id_f_min = ut_is.find_freq_index(self.freq_Hw, self.meas_obj.freq_min)
+        id_f_max = ut_is.find_freq_index(self.freq_Hw, self.meas_obj.freq_max)
+        smoothed_spk = np.zeros(smoothed_data.shape, dtype = complex)
+        for jr in range(self.meas_obj.receivers.coord.shape[0]):
+            original_power = np.sum(np.abs(self.Hww_mtx[jr,id_f_min:id_f_max])**2)
+            smoothed_power = np.sum(np.abs(smoothed_data[jr,id_f_min:id_f_max])**2)
+            smoothed_spk[jr,:] = ((original_power/smoothed_power)**0.5)*\
+                smoothed_data[jr,:]
+            
+        return smoothed_spk
+
+    def smooth_movavg(self, win_length = 501):
+        """ Smoowth windowed FRF using moving average
+        """
+        Hw_smoothed = np.zeros(self.Hww_mtx.shape, dtype = complex)
+        self.delta_f = self.freq_Hw[win_length-1]
+        bar = tqdm(total=self.meas_obj.receivers.coord.shape[0],
+                   desc='Smoothing spectra (Moving average filter)', ascii=False)
+        for jr in range(self.meas_obj.receivers.coord.shape[0]):
+            re_smooth = self.movavg(data = np.real(self.Hww_mtx[jr,:]),
+                                    win_length = win_length)
+            im_smooth = self.movavg(data = np.imag(self.Hww_mtx[jr,:]),
+                                    win_length = win_length)
+            Hw_smoothed[jr,:] = re_smooth + 1j*im_smooth
+            bar.update(1)
+        Hw_smoothed = self.rms_correction_smooth(Hw_smoothed)
+        bar.close()
+        return Hw_smoothed
+    
+    def movavg(self, data, win_length = 501):
+        """ Apply moving average to data
+        """
+        weights = np.ones(win_length) / win_length
+        data_smoothed =  np.convolve(data, weights, mode='same')
+        return data_smoothed
+    
+    def smooth_gaussian1d(self, std = 1):
+        """ Smoowth windowed FRF using gaussian average
+        """
+        Hw_smoothed = np.zeros(self.Hww_mtx.shape, dtype = complex)
+        bar = tqdm(total=self.meas_obj.receivers.coord.shape[0],
+                   desc='Smoothing spectra (Gaussian filter)', ascii=False)
+        for jr in range(self.meas_obj.receivers.coord.shape[0]):
+            re_smooth = self.gaussian1d(data = np.real(self.Hww_mtx[jr,:]),
+                                        std = std)
+            im_smooth = self.gaussian1d(data = np.imag(self.Hww_mtx[jr,:]),
+                                        std = std)
+            Hw_smoothed[jr,:] = re_smooth + 1j*im_smooth
+            bar.update(1)
+        Hw_smoothed = self.rms_correction_smooth(Hw_smoothed)
+        bar.close()
+        return Hw_smoothed
+    
+    def gaussian1d(self, data, std = 1):
+        """ Apply gaussian average to data
+        """
+        data_smoothed =  scipy.ndimage.filters.gaussian_filter1d(data, sigma = std)
+        return data_smoothed
+        
+    def smooth_savgol(self, win_length = 501):
+        """ Smoowth windowed FRF using Sawitzky-Golay filter
+        """
+        Hw_smoothed = np.zeros(self.Hww_mtx.shape, dtype = complex)
+        self.delta_f = self.freq_Hw[win_length-1]
+        bar = tqdm(total=self.meas_obj.receivers.coord.shape[0],
+                   desc='Smoothing spectra (Savitzky-Golay filter)', ascii=False)
+        for jr in range(self.meas_obj.receivers.coord.shape[0]):
+            re_smooth = self.savgol_filter(data = np.real(self.Hww_mtx[jr,:]),
+                                           win_length = win_length, polyorder = 2)
+            im_smooth = self.savgol_filter(data = np.imag(self.Hww_mtx[jr,:]),
+                                           win_length = win_length, polyorder = 2)
+            Hw_smoothed[jr,:] = re_smooth + 1j*im_smooth
+            bar.update(1)
+        bar.close()
+        return Hw_smoothed
+    
+    def savgol_filter(self, data, win_length = 501, polyorder = 2):
+        """ Apply Sawitzky-Golay filter to data
+        """
+        data_smoothed = scipy.signal.savgol_filter(data, window_length = win_length, 
+                                                   polyorder = polyorder, 
+                                                   deriv = 0, delta = 1.0,  
+                                                   mode = 'interp')
+        return data_smoothed
+    
     def compute_spk(self,):
         """ Computes the spectrum on the time signal matrix
         """
